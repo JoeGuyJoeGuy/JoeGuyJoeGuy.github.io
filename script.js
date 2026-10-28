@@ -22,12 +22,13 @@
     return;
   }
 
-  let yaw = Math.PI / 4;
+  let yaw = 0;
   let pitch = 0;
   let camera = [0, 0, 0];
   let radius = 14;
   let program;
   let texture;
+  let artTexture;
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -84,6 +85,7 @@
       precision highp float;
       varying vec2 v_uv;
       uniform sampler2D u_sphere;
+      uniform sampler2D u_artAtlas;
       uniform vec2 u_resolution;
       uniform vec3 u_camera;
       uniform float u_yaw;
@@ -109,7 +111,40 @@
         float longitude = atan(normal.z, normal.x);
         float latitude = asin(clamp(normal.y, -1.0, 1.0));
         vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + latitude / PI);
-        vec3 paint = texture2D(u_sphere, sphereUV).rgb;
+        vec3 color = texture2D(u_sphere, sphereUV).rgb;
+
+        // The room is spherical, but each painting is a flat tangent-facing plane.
+        // That keeps its original proportions instead of stretching it over the shell.
+        float nearestPanel = distanceToShell + 1.0;
+        float halfWidth = u_radius * 0.245;
+        float halfHeight = halfWidth / 1.5;
+        for (int i = 0; i < 12; i++) {
+          float index = float(i);
+          float angle = (index - 4.0) * (PI / 6.0);
+          vec3 panelNormal = normalize(vec3(sin(angle), 0.0, -cos(angle)));
+          vec3 panelRight = normalize(vec3(cos(angle), 0.0, sin(angle)));
+          vec3 panelCenter = panelNormal * (u_radius - 0.62);
+          float denominator = dot(ray, panelNormal);
+          if (abs(denominator) > 0.0001) {
+            float panelDistance = dot(panelCenter - u_camera, panelNormal) / denominator;
+            if (panelDistance > 0.0 && panelDistance < nearestPanel) {
+              vec3 panelHit = u_camera + ray * panelDistance - panelCenter;
+              vec2 panelUV = vec2(dot(panelHit, panelRight) / (halfWidth * 2.0) + 0.5,
+                                  panelHit.y / (halfHeight * 2.0) + 0.5);
+              if (panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0) {
+                float edge = min(min(panelUV.x, 1.0 - panelUV.x), min(panelUV.y, 1.0 - panelUV.y));
+                float alpha = smoothstep(0.0, 0.11, edge);
+                float column = mod(index, 4.0);
+                float row = floor(index / 4.0);
+                vec2 atlasUV = vec2((column + panelUV.x) / 4.0,
+                                    1.0 - (row + 1.0 - panelUV.y) / 3.0);
+                vec3 panelPaint = texture2D(u_artAtlas, atlasUV).rgb;
+                color = mix(color, panelPaint, alpha);
+                nearestPanel = panelDistance;
+              }
+            }
+          }
+        }
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
         // gives the painted world a gentle change in light as the viewer travels.
@@ -119,7 +154,7 @@
         float bounce = 0.035 * (0.5 + 0.5 * sin(u_time * 0.12 + normal.x * 2.1 + normal.z * 1.7));
         vec3 ambient = vec3(0.58, 0.56, 0.53);
         vec3 warmKey = vec3(0.50, 0.37, 0.23) * key;
-        vec3 color = paint * (ambient + warmKey + vec3(bounce));
+        color = color * (ambient + warmKey + vec3(bounce));
         color += vec3(0.06, 0.035, 0.015) * pow(key, 5.0);
         float vignette = 1.0 - 0.10 * dot(screen, screen);
         color = color * vignette;
@@ -162,76 +197,52 @@
     const context = map.getContext("2d", { alpha: false });
     context.fillStyle = "#211b16";
     context.fillRect(0, 0, width, height);
-
-    // Soft, overlapping colour fields tie the individual works into one sphere.
+    const colors = ["#ae7352", "#c69d63", "#7c7670", "#80645d", "#b9907c", "#bb9157", "#877d75", "#be8568", "#ab945f", "#779084", "#b69a62", "#a78470"];
     images.forEach((image, index) => {
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      const x = column * tileWidth;
-      const y = row * tileHeight;
-      const hue = ["#ae7352", "#c69d63", "#7c7670", "#80645d", "#b9907c", "#bb9157", "#877d75", "#be8568", "#ab945f", "#779084", "#b69a62", "#a78470"][index];
-      if (image) {
-        context.save();
-        context.filter = "blur(34px) saturate(1.25) brightness(.62)";
-        cover(context, image, x - 20, y - 20, tileWidth + 40, tileHeight + 40);
-        context.restore();
-      } else {
-        context.fillStyle = hue;
-        context.fillRect(x, y, tileWidth, tileHeight);
-      }
-      const wash = context.createRadialGradient(x + tileWidth * 0.5, y + tileHeight * 0.46, 0, x + tileWidth * 0.5, y + tileHeight * 0.46, tileWidth * 0.72);
-      wash.addColorStop(0, `${hue}00`);
-      wash.addColorStop(1, "#100e0d78");
-      context.fillStyle = wash;
+      const x = (index % 4) * tileWidth;
+      const y = Math.floor(index / 4) * tileHeight;
+      context.fillStyle = colors[index];
       context.fillRect(x, y, tileWidth, tileHeight);
-    });
-
-    // Crisp, complete paintings sit in the blended colour field. Their proportions
-    // are preserved, including the portrait work, which is contained without crop.
-    images.forEach((image, index) => {
       if (!image) return;
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      const x = column * tileWidth;
-      const y = row * tileHeight;
-      const panel = document.createElement("canvas");
-      panel.width = tileWidth;
-      panel.height = Math.ceil(tileHeight);
-      const p = panel.getContext("2d");
-      p.filter = "blur(28px) saturate(1.3) brightness(.68)";
-      cover(p, image, -16, -12, tileWidth + 32, tileHeight + 24);
-      p.filter = "none";
-      const padX = tileWidth * 0.035;
-      const padY = tileHeight * 0.035;
-      contain(p, image, padX, padY, tileWidth - padX * 2, tileHeight - padY * 2);
-
-      // Feather the perimeter so neighbouring compositions melt together instead
-      // of reading as twelve separate picture cards.
-      p.globalCompositeOperation = "destination-in";
-      const feather = p.createRadialGradient(tileWidth * 0.5, tileHeight * 0.5, tileWidth * 0.18, tileWidth * 0.5, tileHeight * 0.5, tileWidth * 0.78);
-      feather.addColorStop(0, "rgba(255,255,255,1)");
-      feather.addColorStop(0.76, "rgba(255,255,255,.98)");
-      feather.addColorStop(1, "rgba(255,255,255,.28)");
-      p.fillStyle = feather;
-      p.fillRect(0, 0, tileWidth, tileHeight);
-      p.globalCompositeOperation = "source-over";
-      context.globalAlpha = 0.98;
-      context.drawImage(panel, x, y, tileWidth, tileHeight);
-      context.globalAlpha = 1;
+      context.save();
+      context.filter = "blur(52px) saturate(1.35) brightness(.62)";
+      cover(context, image, x - 64, y - 64, tileWidth + 128, tileHeight + 128);
+      context.restore();
     });
-
-    // A restrained texture glow joins the colour transitions and catches the
-    // travelling light without blurring the paintings themselves.
     const haze = document.createElement("canvas");
     haze.width = width;
     haze.height = height;
     const hazeContext = haze.getContext("2d");
-    hazeContext.filter = "blur(20px)";
+    hazeContext.filter = "blur(42px)";
     hazeContext.drawImage(map, 0, 0);
-    context.globalAlpha = 0.1;
+    context.globalAlpha = 0.35;
     context.drawImage(haze, 0, 0);
     context.globalAlpha = 1;
     return map;
+  }
+
+  function makeArtAtlas(images) {
+    const width = 4096;
+    const tileWidth = width / 4;
+    const tileHeight = 768;
+    const atlas = document.createElement("canvas");
+    atlas.width = width;
+    atlas.height = tileHeight * 3;
+    const context = atlas.getContext("2d", { alpha: false });
+    context.fillStyle = "#29231f";
+    context.fillRect(0, 0, atlas.width, atlas.height);
+    images.forEach((image, index) => {
+      if (!image) return;
+      const x = (index % 4) * tileWidth;
+      const y = Math.floor(index / 4) * tileHeight;
+      const pad = 12;
+      context.save();
+      context.filter = "blur(24px) brightness(.7) saturate(1.2)";
+      cover(context, image, x - pad, y - pad, tileWidth + pad * 2, tileHeight + pad * 2);
+      context.restore();
+      contain(context, image, x + pad, y + pad, tileWidth - pad * 2, tileHeight - pad * 2);
+    });
+    return atlas;
   }
 
   function buildWorld(images) {
@@ -247,6 +258,7 @@
       gl.enableVertexAttribArray(positionAttribute);
       gl.vertexAttribPointer(positionAttribute, 2, gl.FLOAT, false, 0, 0);
       const pano = makeSphereTexture(images);
+      const artAtlas = makeArtAtlas(images);
       texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -256,6 +268,15 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.generateMipmap(gl.TEXTURE_2D);
+      artTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, artTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, artAtlas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.uniform1i(gl.getUniformLocation(program, "u_artAtlas"), 1);
       gl.uniform1i(gl.getUniformLocation(program, "u_sphere"), 0);
       gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
       gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
@@ -336,6 +357,8 @@
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, artTexture);
     gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
@@ -369,16 +392,28 @@
 
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
-    const b = camera[0] * ray[0] + camera[1] * ray[1] + camera[2] * ray[2];
-    const c = camera[0] ** 2 + camera[1] ** 2 + camera[2] ** 2 - radius ** 2;
-    const distance = -b + Math.sqrt(Math.max(0, b * b - c));
-    const hit = camera.map((value, i) => value + ray[i] * distance);
-    const xz = Math.hypot(hit[0], hit[2]);
-    const u = (Math.atan2(hit[2], hit[0]) / (Math.PI * 2) + 0.5 + 1) % 1;
-    const v = 0.5 + Math.atan2(hit[1], xz) / Math.PI;
-    const column = Math.min(3, Math.floor(u * 4));
-    const row = Math.min(2, Math.floor(v * 3));
-    return row * 4 + column;
+    let closest = Infinity;
+    let selected = 0;
+    const halfWidth = radius * 0.245;
+    const halfHeight = halfWidth / 1.5;
+    for (let index = 0; index < 12; index += 1) {
+      const angle = (index - 4) * (Math.PI / 6);
+      const normal = [Math.sin(angle), 0, -Math.cos(angle)];
+      const right = [Math.cos(angle), 0, Math.sin(angle)];
+      const center = normal.map(value => value * (radius - 0.62));
+      const denominator = ray[0] * normal[0] + ray[2] * normal[2];
+      if (Math.abs(denominator) < 0.0001) continue;
+      const distance = ((center[0] - camera[0]) * normal[0] + (center[2] - camera[2]) * normal[2]) / denominator;
+      if (distance <= 0 || distance >= closest) continue;
+      const hit = camera.map((value, axis) => value + ray[axis] * distance - center[axis]);
+      const u = (hit[0] * right[0] + hit[2] * right[2]) / (halfWidth * 2) + 0.5;
+      const v = hit[1] / (halfHeight * 2) + 0.5;
+      if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+        closest = distance;
+        selected = index;
+      }
+    }
+    return selected;
   }
 
   canvas.addEventListener("pointerdown", event => {
