@@ -1,6 +1,6 @@
 (() => {
   const artwork = Array.from({ length: 12 }, (_, i) => `artwork/${String(i + 1).padStart(2, "0")}.jpg`);
-  const skyAssets = Array.from({ length: 12 }, (_, i) => `artwork/pano/${String(i + 1).padStart(2, "0")}.jpg`);
+  const skyAssets = artwork;
   const canvas = document.getElementById("sky");
   const entry = document.getElementById("entry");
   const enterButton = document.getElementById("enter");
@@ -342,7 +342,6 @@
       resize();
       loading.classList.add("done");
       render();
-      sharpenSphereArtwork(artworkMap).catch(error => console.warn("High-resolution sphere artwork was unavailable", error));
     } catch (error) {
       console.error("Sphere could not be prepared", error);
       loading.innerHTML = '<span>The sphere could not be opened in this browser.</span>';
