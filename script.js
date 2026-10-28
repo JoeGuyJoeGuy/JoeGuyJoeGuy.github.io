@@ -99,7 +99,7 @@
       vec3 panelCenter(int index, float clock) {
         float column = float(index - (index / 4) * 4);
         float row = float(index / 4);
-        float baseLongitude = (column - 1.5) * (PI * 0.5);
+        float baseLongitude = (column - 1.5) * (PI * 0.5) - PI * 0.25;
         float baseLatitude = 0.78 - row * 0.78;
         float speed = 0.035 * (1.0 + 0.08 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.025;
@@ -497,7 +497,7 @@
     for (let index = 0; index < 12; index += 1) {
       const column = index % 4;
       const row = Math.floor(index / 4);
-      const baseLongitude = (column - 1.5) * Math.PI / 2;
+      const baseLongitude = (column - 1.5) * Math.PI / 2 - Math.PI / 4;
       const baseLatitude = 0.78 - row * 0.78;
       const travel = time * 0.035 * (1 + 0.08 * Math.sin(index * 1.7)) + index * 0.025;
       const latitude = ((baseLatitude - travel + 1.12) % 2.24 + 2.24) % 2.24 - 1.12;
