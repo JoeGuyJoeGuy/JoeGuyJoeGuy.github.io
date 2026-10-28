@@ -145,7 +145,9 @@
             vec3 panelHit = u_camera + ray * panelDistance;
             vec3 panelOffset = panelHit - panelPosition;
             vec2 panelPoint = vec2(dot(panelOffset, tangentRight), dot(panelOffset, tangentUp)) / u_radius;
-            vec2 panelUV = panelPoint / vec2(0.66, 0.44) * 0.5 + 0.5;
+            float panelHalfWidth = min(0.66, aspect * scale * 0.92);
+            float panelHalfHeight = panelHalfWidth * (2.0 / 3.0);
+            vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
             float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
             float opacity = (1.0 - smoothstep(0.86, 1.0, edge)) * step(0.0, panelUV.x) * step(panelUV.x, 1.0) * step(0.0, panelUV.y) * step(panelUV.y, 1.0) * step(0.0, panelDistance);
             float column = float(i - (i / 4) * 4);
@@ -479,6 +481,9 @@
 
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
+    const rect = canvas.getBoundingClientRect();
+    const panelHalfWidth = Math.min(0.66, rect.width / rect.height * Math.tan((Math.PI / 2.35) / 2) * 0.92);
+    const panelHalfHeight = panelHalfWidth * (2 / 3);
     const podY = 1.12;
     const localCamera = [camera[0], camera[1] / podY, camera[2]];
     const localRay = [ray[0], ray[1] / podY, ray[2]];
@@ -510,8 +515,8 @@
       if (panelDistance <= 0) continue;
       const panelHit = camera.map((value, axis) => value + ray[axis] * panelDistance);
       const panelOffset = panelHit.map((value, axis) => value - panelPosition[axis]);
-      const px = (panelOffset[0] * tangentRight[0] + panelOffset[1] * tangentRight[1] + panelOffset[2] * tangentRight[2]) / radius / 0.66;
-      const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / 0.44;
+      const px = (panelOffset[0] * tangentRight[0] + panelOffset[1] * tangentRight[1] + panelOffset[2] * tangentRight[2]) / radius / panelHalfWidth;
+      const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / panelHalfHeight;
       if (Math.abs(px) <= 1 && Math.abs(py) <= 1) return index;
     }
     return -1;
