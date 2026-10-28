@@ -92,6 +92,7 @@
       uniform float u_radius;
       uniform float u_time;
       const float PI = 3.14159265358979323846264;
+      const float POD_Y = 1.12;
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
         float scale = tan(u_fov * 0.5);
@@ -100,15 +101,19 @@
         vec3 right = normalize(vec3(cos(u_yaw), 0.0, sin(u_yaw)));
         vec3 up = normalize(cross(right, forward));
         vec3 ray = normalize(forward + right * screen.x * aspect * scale + up * screen.y * scale);
-        float b = dot(u_camera, ray);
-        float c = dot(u_camera, u_camera) - u_radius * u_radius;
+        // A softly elongated ellipsoid gives the interior a rounded pod shape.
+        // Equal-area vertical mapping gives the pole paintings more room.
+        vec3 localCamera = vec3(u_camera.x, u_camera.y / POD_Y, u_camera.z);
+        vec3 localRay = vec3(ray.x, ray.y / POD_Y, ray.z);
+        float b = dot(localCamera, localRay);
+        float c = dot(localCamera, localCamera) - u_radius * u_radius;
         float discriminant = max(0.0, b * b - c);
         float distanceToShell = -b + sqrt(discriminant);
-        vec3 positionOnShell = u_camera + ray * distanceToShell;
-        vec3 normal = normalize(positionOnShell);
+        vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
+        vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
+        vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
         float longitude = atan(normal.z, normal.x);
-        float latitude = asin(clamp(normal.y, -1.0, 1.0));
-        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + latitude / PI);
+        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + normal.y * 0.5);
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
@@ -367,14 +372,19 @@
 
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
-    const b = camera[0] * ray[0] + camera[1] * ray[1] + camera[2] * ray[2];
-    const c = camera[0] ** 2 + camera[1] ** 2 + camera[2] ** 2 - radius ** 2;
+    const podY = 1.12;
+    const localCamera = [camera[0], camera[1] / podY, camera[2]];
+    const localRay = [ray[0], ray[1] / podY, ray[2]];
+    const b = localCamera[0] * localRay[0] + localCamera[1] * localRay[1] + localCamera[2] * localRay[2];
+    const c = localCamera[0] ** 2 + localCamera[1] ** 2 + localCamera[2] ** 2 - radius ** 2;
     const distance = -b + Math.sqrt(Math.max(0, b * b - c));
-    const hit = camera.map((value, axis) => value + ray[axis] * distance);
+    const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
+    const hit = [localHit[0], localHit[1] * podY, localHit[2]];
     const longitude = Math.atan2(hit[2], hit[0]);
-    const latitude = Math.asin(Math.max(-1, Math.min(1, hit[1] / radius)));
     const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
-    const v = 0.5 + latitude / Math.PI;
+    const normalLength = Math.hypot(localHit[0], localHit[2], localHit[1] / podY);
+    const polePosition = (localHit[1] / podY) / normalLength;
+    const v = 0.5 + Math.max(-1, Math.min(1, polePosition)) * 0.5;
     const column = Math.min(3, Math.floor(u * 4));
     const row = Math.min(2, Math.floor(v * 3));
     return row * 4 + column;
