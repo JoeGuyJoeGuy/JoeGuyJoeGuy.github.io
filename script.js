@@ -202,8 +202,9 @@
             vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
             bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
             if (panelDistance > 0.0 && insidePanel) {
-              float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
-              float opacity = 1.0 - smoothstep(0.66, 1.0, edge);
+              float edgeX = 1.0 - smoothstep(0.66, 1.0, abs(panelUV.x * 2.0 - 1.0));
+              float edgeY = 1.0 - smoothstep(0.66, 1.0, abs(panelUV.y * 2.0 - 1.0));
+              float opacity = edgeX * edgeY;
               int workIndex = i - (i / 12) * 12;
               float artColumn = float(workIndex - (workIndex / 4) * 4);
               float artRow = float(workIndex / 4);
