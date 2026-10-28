@@ -492,7 +492,7 @@
     if (!entry.classList.contains("leaving") || dialog.open || !throneProgram) return;
     const orbit = time * 0.026 - Math.PI / 2;
     const orbitRadius = 35;
-    const objectScale = 2.25;
+    const objectScale = 1.85;
     const bob = Math.sin(orbit * 0.54) * 4.2;
     const position = [Math.cos(orbit) * orbitRadius, bob, Math.sin(orbit) * orbitRadius];
     const inward = position.map(value => -value / Math.hypot(...position));
