@@ -148,7 +148,7 @@
             vec3 panelOffset = panelHit - panelPosition;
             vec2 panelPoint = vec2(dot(panelOffset, tangentRight), dot(panelOffset, tangentUp)) / u_radius;
         // Generous overlap between undistorted artwork panels hides the dark shell.
-        float panelHalfWidth = 0.63;
+        float panelHalfWidth = 0.68;
             float panelHalfHeight = panelHalfWidth * (2.0 / 3.0);
             vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
             bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
@@ -444,7 +444,7 @@
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
     const rect = canvas.getBoundingClientRect();
-    const panelHalfWidth = 0.63;
+    const panelHalfWidth = 0.68;
     const panelHalfHeight = panelHalfWidth * (2 / 3);
     const podY = 1.12;
     const localCamera = [camera[0], camera[1] / podY, camera[2]];
