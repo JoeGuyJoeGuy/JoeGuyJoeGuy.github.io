@@ -200,14 +200,11 @@
     map.width = width;
     map.height = height;
     const context = map.getContext("2d", { alpha: false });
-    context.fillStyle = "#211b16";
-    context.fillRect(0, 0, width, height);
-    const colors = ["#ae7352", "#c69d63", "#7c7670", "#80645d", "#b9907c", "#bb9157", "#877d75", "#be8568", "#ab945f", "#779084", "#b69a62", "#a78470"];
-    images.forEach((image, index) => {
+    const fallback = images.find(Boolean);
+    images.forEach((loadedImage, index) => {
+      const image = loadedImage || fallback;
       const x = (index % 4) * tileWidth;
       const y = Math.floor(index / 4) * tileHeight;
-      context.fillStyle = colors[index];
-      context.fillRect(x, y, tileWidth, tileHeight);
       if (!image) return;
       context.save();
       context.filter = "blur(76px) saturate(1.2) brightness(.82)";
@@ -233,9 +230,9 @@
     atlas.width = width;
     atlas.height = tileHeight * 3;
     const context = atlas.getContext("2d", { alpha: false });
-    context.fillStyle = "#29231f";
-    context.fillRect(0, 0, atlas.width, atlas.height);
-    images.forEach((image, index) => {
+    const fallback = images.find(Boolean);
+    images.forEach((loadedImage, index) => {
+      const image = loadedImage || fallback;
       if (!image) return;
       const x = (index % 4) * tileWidth;
       const y = Math.floor(index / 4) * tileHeight;
