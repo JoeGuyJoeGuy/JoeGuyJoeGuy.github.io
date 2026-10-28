@@ -116,7 +116,7 @@
         // The room is spherical, but each painting is a flat tangent-facing plane.
         // That keeps its original proportions instead of stretching it over the shell.
         float nearestPanel = distanceToShell + 1.0;
-        float halfWidth = u_radius * 0.245;
+        float halfWidth = u_radius * 0.27;
         float halfHeight = halfWidth / 1.5;
         for (int i = 0; i < 12; i++) {
           float index = float(i);
@@ -133,7 +133,7 @@
                                   panelHit.y / (halfHeight * 2.0) + 0.5);
               if (panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0) {
                 float edge = min(min(panelUV.x, 1.0 - panelUV.x), min(panelUV.y, 1.0 - panelUV.y));
-                float alpha = smoothstep(0.0, 0.11, edge);
+                float alpha = smoothstep(0.0, 0.17, edge);
                 float column = mod(index, 4.0);
                 float row = floor(index / 4.0);
                 vec2 atlasUV = vec2((column + panelUV.x) / 4.0,
@@ -205,7 +205,7 @@
       context.fillRect(x, y, tileWidth, tileHeight);
       if (!image) return;
       context.save();
-      context.filter = "blur(52px) saturate(1.35) brightness(.62)";
+      context.filter = "blur(112px) saturate(1.35) brightness(.62)";
       cover(context, image, x - 64, y - 64, tileWidth + 128, tileHeight + 128);
       context.restore();
     });
@@ -213,7 +213,7 @@
     haze.width = width;
     haze.height = height;
     const hazeContext = haze.getContext("2d");
-    hazeContext.filter = "blur(42px)";
+    hazeContext.filter = "blur(92px)";
     hazeContext.drawImage(map, 0, 0);
     context.globalAlpha = 0.35;
     context.drawImage(haze, 0, 0);
@@ -394,7 +394,7 @@
     const ray = rayForScreen(x, y);
     let closest = Infinity;
     let selected = 0;
-    const halfWidth = radius * 0.245;
+    const halfWidth = radius * 0.27;
     const halfHeight = halfWidth / 1.5;
     for (let index = 0; index < 12; index += 1) {
       const angle = (index - 4) * (Math.PI / 6);
