@@ -38,6 +38,7 @@
   let artworkMap;
   let throneProgram;
   let throneRings = [];
+  let throneEye;
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -100,6 +101,8 @@
       uniform float u_pitch;
       uniform float u_fov;
       uniform float u_radius;
+      uniform float u_sky_radius;
+      uniform float u_render_layer;
       uniform float u_time;
       const float PI = 3.14159265358979323846264;
       const float POD_Y = 1.12;
@@ -151,7 +154,7 @@
         vec3 localRay = vec3(ray.x, ray.y / POD_Y, ray.z);
         float a = dot(localRay, localRay);
         float b = dot(localCamera, localRay);
-        float c = dot(localCamera, localCamera) - u_radius * u_radius;
+        float c = dot(localCamera, localCamera) - u_sky_radius * u_sky_radius;
         float discriminant = max(0.0, b * b - a * c);
         float distanceToShell = (-b + sqrt(discriminant)) / a;
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
@@ -184,6 +187,18 @@
                                hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
         float star = (1.0 - smoothstep(0.07, 0.2, length(starLocal - starOffset))) * step(0.988, hash31(starCell));
         color += vec3(0.86, 0.67, 0.48) * star * 0.4;
+
+        if (u_render_layer < 0.5) {
+          vec3 insideNormal = -normal;
+          vec3 keyDirection = normalize(vec3(cos(u_time * 0.055), 0.58 + 0.08 * sin(u_time * 0.07), sin(u_time * 0.055)));
+          float key = max(dot(insideNormal, keyDirection), 0.0);
+          color *= 1.0 + vec3(0.09, 0.06, 0.03) * key;
+          color *= 1.0 - 0.04 * dot(screen, screen);
+          gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+          return;
+        }
+        color = vec3(0.0);
+        float panelCoverage = 0.0;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
@@ -245,8 +260,10 @@
             // giving the artwork-coated sphere a translucent, layered quality.
             float coverage = max(0.94, min(combinedOpacity, 1.0)) * 0.74;
             color = mix(color, blendedPanels, coverage);
+            panelCoverage = coverage;
           } else {
-            color = mix(color, panelColor, panelOpacity * 0.74);
+            panelCoverage = panelOpacity * 0.74;
+            color = panelColor;
           }
         }
 
@@ -262,7 +279,7 @@
         color += vec3(0.010, 0.006, 0.003) * pow(key, 5.0);
         float vignette = 1.0 - 0.04 * dot(screen, screen);
         color = color * vignette;
-        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), panelCoverage);
       }
     `);
     const next = gl.createProgram();
@@ -381,27 +398,26 @@
 
   function makeThroneRing(radiusOnPlane, eyeCount, compact) {
     const data = [];
-    const segments = compact ? 64 : 96;
-    const sides = compact ? 10 : 14;
-    appendTorus(data, radiusOnPlane, 0.31, [0.45, 0.255, 0.09], segments, sides);
+    const segments = compact ? 80 : 128;
+    const sides = compact ? 12 : 18;
+    appendTorus(data, radiusOnPlane, 0.31, [0.42, 0.235, 0.075], segments, sides);
     appendTorus(data, radiusOnPlane - 0.25, 0.055, [0.78, 0.55, 0.25], segments, Math.max(8, sides - 2));
     appendTorus(data, radiusOnPlane + 0.25, 0.055, [0.24, 0.14, 0.055], segments, Math.max(8, sides - 2));
-    const eyeWidth = radiusOnPlane > 11 ? 0.72 : radiusOnPlane > 9 ? 0.64 : 0.56;
-    for (let index = 0; index < eyeCount; index += 1) {
-      const angle = (index / eyeCount) * Math.PI * 2;
-      const radial = [Math.cos(angle), Math.sin(angle), 0];
-      const tangent = [-Math.sin(angle), Math.cos(angle), 0];
-      const up = [0, 0, 1];
-      const inward = [-Math.cos(angle), -Math.sin(angle), 0];
-      const center = radial.map(value => value * (radiusOnPlane - 0.36));
-      appendEyeEllipsoid(data, center, tangent, up, inward, [eyeWidth, eyeWidth * 0.72, 0.23], [0.76, 0.64, 0.46]);
-      const irisCenter = center.map((value, axis) => value + inward[axis] * 0.15);
-      appendEyeEllipsoid(data, irisCenter, tangent, up, inward, [eyeWidth * 0.42, eyeWidth * 0.43, 0.085], [0.53, 0.27, 0.075]);
-      const pupilCenter = center.map((value, axis) => value + inward[axis] * 0.205);
-      appendEyeEllipsoid(data, pupilCenter, tangent, up, inward, [eyeWidth * 0.17, 0.14, 0.043], [0.025, 0.018, 0.014]);
-      const glintCenter = center.map((value, axis) => value + tangent[axis] * eyeWidth * 0.12 + up[axis] * 0.09 + inward[axis] * 0.245);
-      appendEyeEllipsoid(data, glintCenter, tangent, up, inward, [0.035, 0.045, 0.018], [1.0, 0.91, 0.72]);
-    }
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9, radius: radiusOnPlane, eyeCount };
+  }
+
+  function makeThroneEye(compact) {
+    const data = [];
+    const detail = compact ? [8, 12] : [12, 20];
+    const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
+    appendEyeEllipsoid(data, [0, 0, -0.025], x, y, z, [0.58, 0.43, 0.20], [0.22, 0.12, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.49, 0.35, 0.17], [0.88, 0.82, 0.70], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.148], x, y, z, [0.225, 0.24, 0.055], [0.40, 0.19, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.192], x, y, z, [0.105, 0.16, 0.034], [0.018, 0.012, 0.009], ...detail);
+    appendEyeEllipsoid(data, [-0.075, 0.10, 0.22], x, y, z, [0.042, 0.052, 0.018], [1.0, 0.94, 0.80], ...detail);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -419,6 +435,18 @@
       }
     }
     return out;
+  }
+
+  function scaleMatrix(value) {
+    return new Float32Array([value, 0, 0, 0, 0, value, 0, 0, 0, 0, value, 0, 0, 0, 0, 1]);
+  }
+
+  function transformPoint(matrix, point) {
+    return [
+      matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12],
+      matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13],
+      matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14]
+    ];
   }
 
   function rotationMatrix(x, y, z) {
@@ -463,11 +491,12 @@
   function drawThrone() {
     if (!entry.classList.contains("leaving") || dialog.open || !throneProgram) return;
     const orbit = time * 0.026 - Math.PI / 2;
-    const orbitRadius = 19.4;
-    const bob = Math.sin(orbit * 0.54) * 2.6;
+    const orbitRadius = 35;
+    const objectScale = 2.25;
+    const bob = Math.sin(orbit * 0.54) * 4.2;
     const position = [Math.cos(orbit) * orbitRadius, bob, Math.sin(orbit) * orbitRadius];
     const inward = position.map(value => -value / Math.hypot(...position));
-    const tangentRaw = [-Math.sin(orbit), Math.cos(orbit * 0.54) * 2.6 * 0.54 / orbitRadius, Math.cos(orbit)];
+    const tangentRaw = [-Math.sin(orbit), Math.cos(orbit * 0.54) * 4.2 * 0.54 / orbitRadius, Math.cos(orbit)];
     const tangentLength = Math.hypot(...tangentRaw);
     const tangent = tangentRaw.map(value => value / tangentLength);
     const upRaw = [inward[1] * tangent[2] - inward[2] * tangent[1], inward[2] * tangent[0] - inward[0] * tangent[2], inward[0] * tangent[1] - inward[1] * tangent[0]];
@@ -493,19 +522,38 @@
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
-    throneRings.forEach((ring, index) => {
-      const speed = [0.095, -0.073, 0.061][index];
-      const tilt = [[0.24, 0.10], [1.22, 0.48], [0.52, 1.18]][index];
-      const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
-      const model = matrixMultiply(frame, localRotation);
+    const drawMesh = (mesh, model) => {
       const mvp = matrixMultiply(projection, matrixMultiply(view, model));
-      gl.bindBuffer(gl.ARRAY_BUFFER, ring.buffer);
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
       gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_model"), false, model);
       gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_mvp"), false, mvp);
-      gl.drawArrays(gl.TRIANGLES, 0, ring.count);
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    };
+    throneRings.forEach((ring, index) => {
+      const speed = [0.095, -0.073, 0.061][index];
+      const tilt = [[0.24, 0.10], [1.22, 0.48], [0.52, 1.18]][index];
+      const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
+      const model = matrixMultiply(frame, matrixMultiply(localRotation, scaleMatrix(objectScale)));
+      drawMesh(ring, model);
+      const worldUp = [0, 1, 0];
+      for (let eyeIndex = 0; eyeIndex < ring.eyeCount; eyeIndex += 1) {
+        const angle = (eyeIndex / ring.eyeCount) * Math.PI * 2;
+        const eyeRadius = (ring.radius - 0.43) * objectScale;
+        const eyeCenter = transformPoint(matrixMultiply(frame, localRotation), [Math.cos(angle) * eyeRadius, Math.sin(angle) * eyeRadius, 0]);
+        const towardCamera = camera.map((value, axis) => value - eyeCenter[axis]);
+        const eyeLength = Math.hypot(...towardCamera) || 1;
+        const eyeNormal = towardCamera.map(value => value / eyeLength);
+        let eyeRight = [eyeNormal[1] * worldUp[2] - eyeNormal[2] * worldUp[1], eyeNormal[2] * worldUp[0] - eyeNormal[0] * worldUp[2], eyeNormal[0] * worldUp[1] - eyeNormal[1] * worldUp[0]];
+        if (Math.hypot(...eyeRight) < 0.001) eyeRight = [1, 0, 0];
+        const rightLength = Math.hypot(...eyeRight);
+        eyeRight = eyeRight.map(value => value / rightLength);
+        const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
+        const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
+        drawMesh(throneEye, matrixMultiply(eyeFrame, scaleMatrix(objectScale)));
+      }
     });
     gl.disable(gl.DEPTH_TEST);
   }
@@ -588,6 +636,7 @@
       throneRings = compactDevice
         ? [makeThroneRing(13.0, 24, true), makeThroneRing(10.5, 20, true), makeThroneRing(8.0, 16, true)]
         : [makeThroneRing(13.0, 32, false), makeThroneRing(10.5, 26, false), makeThroneRing(8.0, 20, false)];
+      throneEye = makeThroneEye(compactDevice);
       skyBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -625,6 +674,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
       gl.uniform1f(gl.getUniformLocation(program, "u_fov"), Math.PI / 2.35);
       gl.uniform1f(gl.getUniformLocation(program, "u_radius"), radius);
+      gl.uniform1f(gl.getUniformLocation(program, "u_sky_radius"), 72);
+      gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 0);
       gl.uniform1f(gl.getUniformLocation(program, "u_time"), 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
@@ -705,8 +756,20 @@
     gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
     gl.uniform1f(gl.getUniformLocation(program, "u_time"), time);
+    gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 0);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     drawThrone();
+    gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
+    gl.enableVertexAttribArray(skyPositionAttribute);
+    gl.vertexAttribPointer(skyPositionAttribute, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 1);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.BLEND);
     requestAnimationFrame(render);
   }
 
