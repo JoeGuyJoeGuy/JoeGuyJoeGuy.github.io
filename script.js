@@ -114,7 +114,7 @@
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
         float longitude = atan(normal.z, normal.x);
         float poleDistance = abs(normal.y);
-        float drift = 0.12 * (1.0 - exp(-u_time * 0.018));
+        float drift = 0.28 * (0.5 - 0.5 * cos(u_time * 0.06));
         float sourcePoleDistance = poleDistance + drift * poleDistance * (1.0 - poleDistance);
         float sourceV = 0.5 + sign(normal.y) * sourcePoleDistance * 0.5;
         vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, sourceV);
@@ -390,7 +390,7 @@
     const polePosition = (localHit[1] / podY) / normalLength;
     const normalizedPole = Math.max(-1, Math.min(1, polePosition));
     const poleDistance = Math.abs(normalizedPole);
-    const drift = 0.12 * (1 - Math.exp(-time * 0.018));
+    const drift = 0.28 * (0.5 - 0.5 * Math.cos(time * 0.06));
     const sourcePoleDistance = poleDistance + drift * poleDistance * (1 - poleDistance);
     const v = 0.5 + Math.sign(normalizedPole) * sourcePoleDistance * 0.5;
     const column = Math.min(3, Math.floor(u * 4));
