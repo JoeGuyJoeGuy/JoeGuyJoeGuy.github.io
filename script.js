@@ -119,7 +119,7 @@
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
         vec3 driftAxis = normalize(vec3(0.82, 0.0, -0.57));
-        vec3 paintedDirection = rotateAroundAxis(normal, driftAxis, u_time * 0.035);
+        vec3 paintedDirection = rotateAroundAxis(normal, driftAxis, u_time * 0.08);
         float longitude = atan(paintedDirection.z, paintedDirection.x);
         vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + paintedDirection.y * 0.5);
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
@@ -172,28 +172,61 @@
     ctx.restore();
   }
 
+  function drawPaintingPanel(context, image, index, tileWidth, tileHeight, panel) {
+    const x = (index % 4) * tileWidth;
+    const y = Math.floor(index / 4) * tileHeight;
+    panel.width = Math.round(tileWidth);
+    panel.height = Math.ceil(tileHeight);
+    const p = panel.getContext("2d");
+    p.filter = "blur(28px) brightness(.88) saturate(1.08)";
+    if (index === 0) drawLandscape(p, image, cover, -18, -14, tileWidth + 36, tileHeight + 28);
+    else cover(p, image, -18, -14, tileWidth + 36, tileHeight + 28);
+    p.filter = "none";
+    const pad = 8;
+    if (index === 0) drawLandscape(p, image, contain, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
+    else contain(p, image, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
+    p.globalCompositeOperation = "destination-in";
+    const horizontal = p.createLinearGradient(0, 0, tileWidth, 0);
+    horizontal.addColorStop(0, "rgba(255,255,255,0)");
+    horizontal.addColorStop(0.09, "rgba(255,255,255,1)");
+    horizontal.addColorStop(0.91, "rgba(255,255,255,1)");
+    horizontal.addColorStop(1, "rgba(255,255,255,0)");
+    p.fillStyle = horizontal;
+    p.fillRect(0, 0, tileWidth, tileHeight);
+    const vertical = p.createLinearGradient(0, 0, 0, tileHeight);
+    vertical.addColorStop(0, "rgba(255,255,255,0)");
+    vertical.addColorStop(0.11, "rgba(255,255,255,1)");
+    vertical.addColorStop(0.89, "rgba(255,255,255,1)");
+    vertical.addColorStop(1, "rgba(255,255,255,0)");
+    p.fillStyle = vertical;
+    p.fillRect(0, 0, tileWidth, tileHeight);
+    p.globalCompositeOperation = "source-over";
+    context.drawImage(panel, x, y);
+  }
+
   function makeSphereTexture(images) {
-    const width = 4096;
-    const height = 2048;
-    const tileWidth = width / 4;
-    const tileHeight = height / 3;
+    const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    const width = Math.min(8192, Math.floor(maxTextureSize / 8) * 8);
+    const height = width / 2;
     const fallback = images.find(Boolean);
     const base = document.createElement("canvas");
-    base.width = width;
-    base.height = height;
+    base.width = width / 2;
+    base.height = height / 2;
     const baseContext = base.getContext("2d", { alpha: false });
+    const baseTileWidth = base.width / 4;
+    const baseTileHeight = base.height / 3;
 
     // Every part of the sky starts with the paintings themselves. A blurred
     // mosaic supplies the shared color material between the sharper works.
     images.forEach((loadedImage, index) => {
       const image = loadedImage || fallback;
       if (!image) return;
-      const x = (index % 4) * tileWidth;
-      const y = Math.floor(index / 4) * tileHeight;
+      const x = (index % 4) * baseTileWidth;
+      const y = Math.floor(index / 4) * baseTileHeight;
       baseContext.save();
       baseContext.filter = "blur(34px) saturate(1.08) brightness(.94)";
-      if (index === 0) drawLandscape(baseContext, image, cover, x - 36, y - 36, tileWidth + 72, tileHeight + 72);
-      else cover(baseContext, image, x - 36, y - 36, tileWidth + 72, tileHeight + 72);
+      if (index === 0) drawLandscape(baseContext, image, cover, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
+      else cover(baseContext, image, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
       baseContext.restore();
     });
 
@@ -201,48 +234,51 @@
     map.width = width;
     map.height = height;
     const context = map.getContext("2d", { alpha: false });
-    context.filter = "blur(58px)";
-    context.drawImage(base, 0, 0);
+    context.filter = `blur(${Math.round(width / 70)}px)`;
+    context.drawImage(base, 0, 0, width, height);
     context.filter = "none";
 
     // Place complete works over that shared field and feather all four edges.
     // The 4 by 3 cells match the 2:1 equirectangular map, so source proportions
     // are retained in the canvas while the finished surface curves around the viewer.
+    const tileWidth = width / 4;
+    const tileHeight = height / 3;
+    const panel = document.createElement("canvas");
     images.forEach((loadedImage, index) => {
       const image = loadedImage || fallback;
       if (!image) return;
-      const x = (index % 4) * tileWidth;
-      const y = Math.floor(index / 4) * tileHeight;
-      const panel = document.createElement("canvas");
-      panel.width = tileWidth;
-      panel.height = Math.ceil(tileHeight);
-      const p = panel.getContext("2d");
-      p.filter = "blur(28px) brightness(.88) saturate(1.08)";
-      if (index === 0) drawLandscape(p, image, cover, -18, -14, tileWidth + 36, tileHeight + 28);
-      else cover(p, image, -18, -14, tileWidth + 36, tileHeight + 28);
-      p.filter = "none";
-      const pad = 8;
-      if (index === 0) drawLandscape(p, image, contain, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
-      else contain(p, image, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
-      p.globalCompositeOperation = "destination-in";
-      const horizontal = p.createLinearGradient(0, 0, tileWidth, 0);
-      horizontal.addColorStop(0, "rgba(255,255,255,0)");
-      horizontal.addColorStop(0.09, "rgba(255,255,255,1)");
-      horizontal.addColorStop(0.91, "rgba(255,255,255,1)");
-      horizontal.addColorStop(1, "rgba(255,255,255,0)");
-      p.fillStyle = horizontal;
-      p.fillRect(0, 0, tileWidth, tileHeight);
-      const vertical = p.createLinearGradient(0, 0, 0, tileHeight);
-      vertical.addColorStop(0, "rgba(255,255,255,0)");
-      vertical.addColorStop(0.11, "rgba(255,255,255,1)");
-      vertical.addColorStop(0.89, "rgba(255,255,255,1)");
-      vertical.addColorStop(1, "rgba(255,255,255,0)");
-      p.fillStyle = vertical;
-      p.fillRect(0, 0, tileWidth, tileHeight);
-      p.globalCompositeOperation = "source-over";
-      context.drawImage(panel, x, y);
+      drawPaintingPanel(context, image, index, tileWidth, tileHeight, panel);
     });
     return map;
+  }
+
+  function loadHighResolutionImage(url) {
+    return new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = url;
+    });
+  }
+
+  async function sharpenSphereArtwork(map) {
+    const context = map.getContext("2d", { alpha: false });
+    const tileWidth = map.width / 4;
+    const tileHeight = map.height / 3;
+    const panel = document.createElement("canvas");
+    for (let index = 0; index < artwork.length; index += 1) {
+      const image = await loadHighResolutionImage(artwork[index]);
+      if (image) {
+        drawPaintingPanel(context, image, index, tileWidth, tileHeight, panel);
+        image.onload = null;
+        image.onerror = null;
+        image.removeAttribute("src");
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, map);
+    gl.generateMipmap(gl.TEXTURE_2D);
   }
 
   function buildWorld(images) {
@@ -280,6 +316,7 @@
       resize();
       loading.classList.add("done");
       render();
+      sharpenSphereArtwork(pano).catch(error => console.warn("High-resolution sphere artwork was unavailable", error));
     } catch (error) {
       console.error("Sphere could not be prepared", error);
       loading.innerHTML = '<span>The sphere could not be opened in this browser.</span>';
@@ -404,7 +441,7 @@
     const surfaceNormal = [localHit[0] / normalLength, (localHit[1] / podY) / normalLength, localHit[2] / normalLength];
     const driftAxisLength = Math.hypot(0.82, 0.57);
     const driftAxis = [0.82 / driftAxisLength, 0, -0.57 / driftAxisLength];
-    const paintedDirection = rotateAroundAxis(surfaceNormal, driftAxis, time * 0.035);
+    const paintedDirection = rotateAroundAxis(surfaceNormal, driftAxis, time * 0.08);
     const longitude = Math.atan2(paintedDirection[2], paintedDirection[0]);
     const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
     const v = 0.5 + paintedDirection[1] * 0.5;
