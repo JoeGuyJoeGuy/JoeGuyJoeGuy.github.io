@@ -17,6 +17,7 @@
   const zoomInButton = document.getElementById("zoom-in");
   const zoomValue = document.getElementById("zoom-value");
   const fitButton = document.getElementById("fit-button");
+  const backgroundMusic = document.getElementById("background-music");
   const held = new Set();
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true, powerPreference: "high-performance" });
 
@@ -485,6 +486,8 @@
     hint.hidden = false;
     controls.hidden = false;
     document.getElementById("position").hidden = false;
+    backgroundMusic.volume = 0.22;
+    backgroundMusic.play().catch(() => {});
   });
 
   function rayForScreen(x, y) {
