@@ -133,6 +133,9 @@
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
+        float nearestPanel = 1.0e6;
+        vec3 panelColor = color;
+        float panelOpacity = 0.0;
         for (int i = 0; i < 12; i++) {
           vec3 center = panelCenter(i, u_time);
           vec3 panelPosition = u_radius * vec3(center.x, center.y * POD_Y, center.z);
@@ -148,15 +151,19 @@
             float panelHalfWidth = min(0.66, aspect * scale * 0.92);
             float panelHalfHeight = panelHalfWidth * (2.0 / 3.0);
             vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
-            float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
-            float opacity = (1.0 - smoothstep(0.86, 1.0, edge)) * step(0.0, panelUV.x) * step(panelUV.x, 1.0) * step(0.0, panelUV.y) * step(panelUV.y, 1.0) * step(0.0, panelDistance);
-            float column = float(i - (i / 4) * 4);
-            float row = float(i / 4);
-            vec2 atlasUV = vec2((column + panelUV.x) * 0.25, 1.0 - (row + (1.0 - panelUV.y)) / 3.0);
-            vec3 painting = texture2D(u_artwork, atlasUV).rgb;
-            color = mix(color, painting, opacity);
+            bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
+            if (panelDistance > 0.0 && panelDistance < nearestPanel && insidePanel) {
+              nearestPanel = panelDistance;
+              float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
+              panelOpacity = 1.0 - smoothstep(0.86, 1.0, edge);
+              float column = float(i - (i / 4) * 4);
+              float row = float(i / 4);
+              vec2 atlasUV = vec2((column + panelUV.x) * 0.25, 1.0 - (row + (1.0 - panelUV.y)) / 3.0);
+              panelColor = texture2D(u_artwork, atlasUV).rgb;
+            }
           }
         }
+        color = mix(color, panelColor, panelOpacity);
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
         // gives the painted world a gentle change in light as the viewer travels.
@@ -492,8 +499,8 @@
     const c = localCamera[0] ** 2 + localCamera[1] ** 2 + localCamera[2] ** 2 - radius ** 2;
     const distance = (-b + Math.sqrt(Math.max(0, b * b - a * c))) / a;
     const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
-    const normalLength = Math.hypot(localHit[0], localHit[2], localHit[1] / podY);
-    const surfaceNormal = [localHit[0] / normalLength, (localHit[1] / podY) / normalLength, localHit[2] / normalLength];
+    let closestWork = -1;
+    let closestDistance = Infinity;
     for (let index = 0; index < 12; index += 1) {
       const column = index % 4;
       const row = Math.floor(index / 4);
@@ -517,9 +524,12 @@
       const panelOffset = panelHit.map((value, axis) => value - panelPosition[axis]);
       const px = (panelOffset[0] * tangentRight[0] + panelOffset[1] * tangentRight[1] + panelOffset[2] * tangentRight[2]) / radius / panelHalfWidth;
       const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / panelHalfHeight;
-      if (Math.abs(px) <= 1 && Math.abs(py) <= 1) return index;
+      if (Math.abs(px) <= 1 && Math.abs(py) <= 1 && panelDistance < closestDistance) {
+        closestDistance = panelDistance;
+        closestWork = index;
+      }
     }
-    return -1;
+    return closestWork;
   }
 
   canvas.addEventListener("pointerdown", event => {
