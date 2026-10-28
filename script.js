@@ -226,8 +226,17 @@
           }
         }
         if (nearestPanel < 1.0e5) {
-          if (secondPanel < 1.0e5) color = mix(color, secondColor, secondOpacity);
-          color = mix(color, panelColor, panelOpacity);
+          if (secondPanel < 1.0e5) {
+            // Crossfade overlapping panels as a painted surface, so the top,
+            // bottom, left, and right edges blend into each other without dark seams.
+            float combinedOpacity = panelOpacity + secondOpacity;
+            float panelMix = panelOpacity / max(combinedOpacity, 0.0001);
+            vec3 blendedPanels = mix(secondColor, panelColor, panelMix);
+            float coverage = max(0.94, min(combinedOpacity, 1.0));
+            color = mix(color, blendedPanels, coverage);
+          } else {
+            color = mix(color, panelColor, panelOpacity);
+          }
         }
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
