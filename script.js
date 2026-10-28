@@ -27,7 +27,6 @@
   let camera = [0, 0, 0];
   let radius = 14;
   let program;
-  let texture;
   let artworkTexture;
   let artworkMap;
   let time = 0;
@@ -85,7 +84,6 @@
     const fragment = createShader(gl.FRAGMENT_SHADER, `
       precision highp float;
       varying vec2 v_uv;
-      uniform sampler2D u_sphere;
       uniform sampler2D u_artwork;
       uniform vec2 u_resolution;
       uniform vec3 u_camera;
@@ -97,19 +95,19 @@
       const float PI = 3.14159265358979323846264;
       const float POD_Y = 1.12;
       vec3 panelCenter(int index, float clock) {
-        float column = float(index - (index / 4) * 4);
-        float row = float(index / 4);
-        float baseLongitude = (column - 1.5) * (PI * 0.5) - PI * 0.25;
-        float baseLatitude = 0.78 - row * 0.78;
-        float speed = 0.035 * (1.0 + 0.08 * sin(float(index) * 1.7));
-        float travel = clock * speed + float(index) * 0.025;
-        float latitude = mod(baseLatitude - travel + 1.12, 2.24) - 1.12;
+        float column = float(index - (index / 6) * 6);
+        float row = float(index / 6);
+        float baseLongitude = (column - 1.0) * (PI / 3.0) - PI * 0.5;
+        float baseLatitude = 1.31 - row * 0.524;
+        float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float travel = clock * speed + float(index) * 0.001;
+        float latitude = mod(baseLatitude - travel + 1.57, 3.14) - 1.57;
         float longitude = baseLongitude - travel * 0.72;
         return normalize(vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude)));
       }
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
-        float scale = tan(u_fov * 0.5);
+      float scale = tan(u_fov * 0.5);
         vec2 screen = v_uv * 2.0 - 1.0;
         vec3 forward = normalize(vec3(sin(u_yaw) * cos(u_pitch), sin(u_pitch), -cos(u_yaw) * cos(u_pitch)));
         vec3 right = normalize(vec3(cos(u_yaw), 0.0, sin(u_yaw)));
@@ -127,16 +125,17 @@
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
-        float longitude = atan(normal.z, normal.x);
-        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + normal.y * 0.5);
-        vec3 color = texture2D(u_sphere, sphereUV).rgb;
+        vec3 color = vec3(0.012, 0.011, 0.010);
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
         float nearestPanel = 1.0e6;
+        float secondPanel = 1.0e6;
         vec3 panelColor = color;
+        vec3 secondColor = color;
         float panelOpacity = 0.0;
-        for (int i = 0; i < 12; i++) {
+        float secondOpacity = 0.0;
+        for (int i = 0; i < 36; i++) {
           vec3 center = panelCenter(i, u_time);
           vec3 panelPosition = u_radius * vec3(center.x, center.y * POD_Y, center.z);
           float facing = dot(ray, center);
@@ -148,22 +147,37 @@
             vec3 panelHit = u_camera + ray * panelDistance;
             vec3 panelOffset = panelHit - panelPosition;
             vec2 panelPoint = vec2(dot(panelOffset, tangentRight), dot(panelOffset, tangentUp)) / u_radius;
-            float panelHalfWidth = min(0.66, aspect * scale * 0.92);
+        // Generous overlap between undistorted artwork panels hides the dark shell.
+        float panelHalfWidth = 0.80;
             float panelHalfHeight = panelHalfWidth * (2.0 / 3.0);
             vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
             bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
-            if (panelDistance > 0.0 && panelDistance < nearestPanel && insidePanel) {
-              nearestPanel = panelDistance;
+            if (panelDistance > 0.0 && insidePanel) {
               float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
-              panelOpacity = 1.0 - smoothstep(0.86, 1.0, edge);
-              float column = float(i - (i / 4) * 4);
-              float row = float(i / 4);
-              vec2 atlasUV = vec2((column + panelUV.x) * 0.25, 1.0 - (row + (1.0 - panelUV.y)) / 3.0);
-              panelColor = texture2D(u_artwork, atlasUV).rgb;
+              float opacity = 1.0 - smoothstep(0.76, 1.0, edge);
+              int workIndex = i - (i / 12) * 12;
+              float artColumn = float(workIndex - (workIndex / 4) * 4);
+              float artRow = float(workIndex / 4);
+              vec2 atlasUV = vec2((artColumn + panelUV.x) * 0.25, 1.0 - (artRow + (1.0 - panelUV.y)) / 3.0);
+              vec3 painting = texture2D(u_artwork, atlasUV).rgb;
+              if (panelDistance < nearestPanel) {
+                secondPanel = nearestPanel;
+                secondColor = panelColor;
+                secondOpacity = panelOpacity;
+                nearestPanel = panelDistance;
+                panelColor = painting;
+                panelOpacity = opacity;
+              } else if (panelDistance < secondPanel) {
+                secondPanel = panelDistance;
+                secondColor = painting;
+                secondOpacity = opacity;
+              }
             }
           }
         }
-        color = mix(color, panelColor, panelOpacity);
+        float coverage = min(panelOpacity + secondOpacity, 1.0);
+        vec3 joinedPaint = (panelColor * panelOpacity + secondColor * secondOpacity) / max(panelOpacity + secondOpacity, 0.001);
+        color = mix(color, joinedPaint, coverage);
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
         // gives the painted world a gentle change in light as the viewer travels.
@@ -188,13 +202,6 @@
     gl.deleteShader(vertex);
     gl.deleteShader(fragment);
     return next;
-  }
-
-  function cover(ctx, image, x, y, width, height) {
-    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
-    ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
   }
 
   function contain(ctx, image, x, y, width, height) {
@@ -244,43 +251,6 @@
     context.drawImage(panel, x, y);
   }
 
-  function makeSphereTexture(images) {
-    const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    const width = Math.min(4096, Math.floor(maxTextureSize / 8) * 8);
-    const height = width / 2;
-    const fallback = images.find(Boolean);
-    const base = document.createElement("canvas");
-    base.width = width / 2;
-    base.height = height / 2;
-    const baseContext = base.getContext("2d", { alpha: false });
-    const baseTileWidth = base.width / 12;
-    const baseTileHeight = base.height / 6;
-
-    // A continuous underpainting of small, softened fragments fills every gap
-    // between the full-size panels while keeping the shell fixed in place.
-    baseContext.filter = "blur(10px) saturate(1.08) brightness(.94)";
-    for (let row = 0; row < 6; row += 1) {
-      for (let column = 0; column < 12; column += 1) {
-        const index = (column * 5 + row * 7) % images.length;
-        const image = images[index] || fallback;
-        if (!image) continue;
-        const x = column * baseTileWidth;
-        const y = row * baseTileHeight;
-        cover(baseContext, image, x - 10, y - 10, baseTileWidth + 20, baseTileHeight + 20);
-      }
-    }
-
-    const map = document.createElement("canvas");
-    map.width = width;
-    map.height = height;
-    const context = map.getContext("2d", { alpha: false });
-    context.filter = `blur(${Math.round(width / 512)}px)`;
-    context.drawImage(base, 0, 0, width, height);
-    context.filter = "none";
-
-    return map;
-  }
-
   function makeArtworkAtlas(images) {
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     const width = Math.min(8192, maxTextureSize);
@@ -328,7 +298,7 @@
         image.removeAttribute("src");
       }
     }
-    gl.activeTexture(gl.TEXTURE1);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, map);
@@ -348,18 +318,9 @@
       const positionAttribute = gl.getAttribLocation(program, "a_position");
       gl.enableVertexAttribArray(positionAttribute);
       gl.vertexAttribPointer(positionAttribute, 2, gl.FLOAT, false, 0, 0);
-      const pano = makeSphereTexture(images);
       artworkMap = makeArtworkAtlas(images);
-      texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pano);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.generateMipmap(gl.TEXTURE_2D);
       artworkTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, artworkMap);
@@ -368,8 +329,7 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.generateMipmap(gl.TEXTURE_2D);
-      gl.uniform1i(gl.getUniformLocation(program, "u_sphere"), 0);
-      gl.uniform1i(gl.getUniformLocation(program, "u_artwork"), 1);
+      gl.uniform1i(gl.getUniformLocation(program, "u_artwork"), 0);
       gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
       gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
       gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
@@ -378,8 +338,6 @@
       gl.uniform1f(gl.getUniformLocation(program, "u_radius"), radius);
       gl.uniform1f(gl.getUniformLocation(program, "u_time"), 0);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
       resize();
       loading.classList.add("done");
@@ -451,10 +409,7 @@
     moveCamera(delta);
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
-    gl.activeTexture(gl.TEXTURE0);
     gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
@@ -489,7 +444,7 @@
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
     const rect = canvas.getBoundingClientRect();
-    const panelHalfWidth = Math.min(0.66, rect.width / rect.height * Math.tan((Math.PI / 2.35) / 2) * 0.92);
+    const panelHalfWidth = 0.80;
     const panelHalfHeight = panelHalfWidth * (2 / 3);
     const podY = 1.12;
     const localCamera = [camera[0], camera[1] / podY, camera[2]];
@@ -501,13 +456,13 @@
     const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
     let closestWork = -1;
     let closestDistance = Infinity;
-    for (let index = 0; index < 12; index += 1) {
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      const baseLongitude = (column - 1.5) * Math.PI / 2 - Math.PI / 4;
-      const baseLatitude = 0.78 - row * 0.78;
-      const travel = time * 0.035 * (1 + 0.08 * Math.sin(index * 1.7)) + index * 0.025;
-      const latitude = ((baseLatitude - travel + 1.12) % 2.24 + 2.24) % 2.24 - 1.12;
+    for (let index = 0; index < 36; index += 1) {
+      const column = index % 6;
+      const row = Math.floor(index / 6);
+      const baseLongitude = (column - 1) * Math.PI / 3 - Math.PI / 2;
+      const baseLatitude = 1.31 - row * 0.524;
+      const travel = time * 0.035 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
+      const latitude = ((baseLatitude - travel + 1.57) % 3.14 + 3.14) % 3.14 - 1.57;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
       const panelPosition = [radius * center[0], radius * center[1] * 1.12, radius * center[2]];
@@ -526,7 +481,7 @@
       const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / panelHalfHeight;
       if (Math.abs(px) <= 1 && Math.abs(py) <= 1 && panelDistance < closestDistance) {
         closestDistance = panelDistance;
-        closestWork = index;
+        closestWork = index % 12;
       }
     }
     return closestWork;
