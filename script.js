@@ -422,9 +422,9 @@
     }
   }
 
-  function appendEyeIris(data) {
-    const spokes = 96;
-    const bands = 7;
+  function appendEyeIris(data, compact) {
+    const spokes = compact ? 64 : 96;
+    const bands = compact ? 5 : 7;
     const innerRadius = 0.15;
     const outerRadius = 0.34;
     function vertex(radius, angle) {
@@ -450,9 +450,9 @@
     }
   }
 
-  function appendEyeLidArc(data, start, end, upper) {
-    const segments = 36;
-    const sides = 8;
+  function appendEyeLidArc(data, start, end, upper, compact) {
+    const segments = compact ? 24 : 36;
+    const sides = compact ? 6 : 8;
     const tubeRadius = 0.105;
     function point(segment, side) {
       const angle = start + (end - start) * segment / segments;
@@ -502,16 +502,16 @@
 
   function makeThroneEye(compact) {
     const data = [];
-    const detail = compact ? [12, 18] : [18, 28];
+    const detail = compact ? [10, 14] : [16, 24];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
     appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.22, 0.12, 0.045], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.98, 0.93, 0.84], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
-    appendEyeIris(data);
+    appendEyeIris(data, compact);
     appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
     appendEyeEllipsoid(data, [-0.105, 0.12, 0.486], x, y, z, [0.067, 0.078, 0.027], [1.0, 0.96, 0.86], ...detail);
-    appendEyeLidArc(data, 0, Math.PI, true);
-    appendEyeLidArc(data, Math.PI, Math.PI * 2, false);
+    appendEyeLidArc(data, 0, Math.PI, true, compact);
+    appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
