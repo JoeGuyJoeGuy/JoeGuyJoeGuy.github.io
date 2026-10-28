@@ -257,7 +257,7 @@
       const x = (index % 4) * baseTileWidth;
       const y = Math.floor(index / 4) * baseTileHeight;
       baseContext.save();
-      baseContext.filter = "blur(34px) saturate(1.08) brightness(.94)";
+      baseContext.filter = "blur(6px) saturate(1.06) brightness(.94)";
       if (index === 0) drawLandscape(baseContext, image, cover, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
       else cover(baseContext, image, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
       baseContext.restore();
@@ -267,7 +267,7 @@
     map.width = width;
     map.height = height;
     const context = map.getContext("2d", { alpha: false });
-    context.filter = `blur(${Math.round(width / 70)}px)`;
+    context.filter = `blur(${Math.round(width / 512)}px)`;
     context.drawImage(base, 0, 0, width, height);
     context.filter = "none";
 
