@@ -224,8 +224,8 @@
           }
         }
         if (nearestPanel < 1.0e5) {
-          if (secondPanel < 1.0e5) color = mix(secondColor, panelColor, panelOpacity);
-          else color = mix(color, panelColor, panelOpacity);
+          if (secondPanel < 1.0e5) color = mix(color, secondColor, secondOpacity);
+          color = mix(color, panelColor, panelOpacity);
         }
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
