@@ -258,7 +258,7 @@
             vec3 blendedPanels = mix(secondColor, panelColor, panelMix);
             // A little light from the painted nebula passes through the panels,
             // giving the artwork-coated sphere a translucent, layered quality.
-            float coverage = max(0.97, min(combinedOpacity, 1.0));
+            float coverage = 1.0 - (1.0 - panelOpacity) * (1.0 - secondOpacity);
             color = blendedPanels;
             panelCoverage = coverage;
           } else {
@@ -841,6 +841,7 @@
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    drawThrone();
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
     gl.enableVertexAttribArray(skyPositionAttribute);
@@ -850,9 +851,6 @@
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disable(gl.BLEND);
-    // Keep the orbiting belts visible across the painted shell, like a close
-    // celestial mechanism wrapping the artwork rather than disappearing behind it.
-    drawThrone();
     requestAnimationFrame(render);
   }
 
