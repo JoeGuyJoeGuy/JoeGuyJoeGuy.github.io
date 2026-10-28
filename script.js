@@ -113,7 +113,11 @@
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
         float longitude = atan(normal.z, normal.x);
-        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + normal.y * 0.5);
+        float poleDistance = abs(normal.y);
+        float drift = 0.12 * (1.0 - exp(-u_time * 0.018));
+        float sourcePoleDistance = poleDistance + drift * poleDistance * (1.0 - poleDistance);
+        float sourceV = 0.5 + sign(normal.y) * sourcePoleDistance * 0.5;
+        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, sourceV);
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
@@ -384,10 +388,13 @@
     const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
     const normalLength = Math.hypot(localHit[0], localHit[2], localHit[1] / podY);
     const polePosition = (localHit[1] / podY) / normalLength;
-    const v = 0.5 + Math.max(-1, Math.min(1, polePosition)) * 0.5;
+    const normalizedPole = Math.max(-1, Math.min(1, polePosition));
+    const poleDistance = Math.abs(normalizedPole);
+    const drift = 0.12 * (1 - Math.exp(-time * 0.018));
+    const sourcePoleDistance = poleDistance + drift * poleDistance * (1 - poleDistance);
+    const v = 0.5 + Math.sign(normalizedPole) * sourcePoleDistance * 0.5;
     const column = Math.min(3, Math.floor(u * 4));
-    // The sphere shader's flipped WebGL texture has its top painting row at v=1.
-    const row = Math.min(2, Math.floor((1 - v) * 3));
+    const row = Math.min(2, Math.floor(v * 3));
     return row * 4 + column;
   }
 
