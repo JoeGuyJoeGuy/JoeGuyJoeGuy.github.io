@@ -205,7 +205,7 @@
       context.fillRect(x, y, tileWidth, tileHeight);
       if (!image) return;
       context.save();
-      context.filter = "blur(112px) saturate(1.35) brightness(.62)";
+      context.filter = "blur(220px) saturate(1.35) brightness(.62)";
       cover(context, image, x - 64, y - 64, tileWidth + 128, tileHeight + 128);
       context.restore();
     });
@@ -213,7 +213,7 @@
     haze.width = width;
     haze.height = height;
     const hazeContext = haze.getContext("2d");
-    hazeContext.filter = "blur(92px)";
+    hazeContext.filter = "blur(160px)";
     hazeContext.drawImage(map, 0, 0);
     context.globalAlpha = 0.35;
     context.drawImage(haze, 0, 0);
