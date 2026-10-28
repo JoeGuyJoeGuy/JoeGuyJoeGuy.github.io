@@ -28,6 +28,8 @@
   let radius = 14;
   let program;
   let texture;
+  let artworkTexture;
+  let artworkMap;
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -84,6 +86,7 @@
       precision highp float;
       varying vec2 v_uv;
       uniform sampler2D u_sphere;
+      uniform sampler2D u_artwork;
       uniform vec2 u_resolution;
       uniform vec3 u_camera;
       uniform float u_yaw;
@@ -93,10 +96,16 @@
       uniform float u_time;
       const float PI = 3.14159265358979323846264;
       const float POD_Y = 1.12;
-      vec3 rotateAroundAxis(vec3 value, vec3 axis, float angle) {
-        float c = cos(angle);
-        float s = sin(angle);
-        return value * c + cross(axis, value) * s + axis * dot(axis, value) * (1.0 - c);
+      vec3 panelCenter(int index, float clock) {
+        float column = float(index - (index / 4) * 4);
+        float row = float(index / 4);
+        float baseLongitude = (column - 1.5) * (PI * 0.5);
+        float baseLatitude = 0.78 - row * 0.78;
+        float speed = 0.035 * (1.0 + 0.08 * sin(float(index) * 1.7));
+        float travel = clock * speed + float(index) * 0.025;
+        float latitude = mod(baseLatitude - travel + 1.12, 2.24) - 1.12;
+        float longitude = baseLongitude - travel * 0.72;
+        return normalize(vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude)));
       }
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
@@ -118,11 +127,30 @@
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
-        vec3 driftAxis = normalize(vec3(0.82, 0.0, -0.57));
-        vec3 paintedDirection = rotateAroundAxis(normal, driftAxis, u_time * 0.08);
-        float longitude = atan(paintedDirection.z, paintedDirection.x);
-        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + paintedDirection.y * 0.5);
+        float longitude = atan(normal.z, normal.x);
+        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + normal.y * 0.5);
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
+
+        // Each work is a separate, undistorted panel sliding over the fixed shell.
+        // A tangent-plane projection keeps the image rectangular as it follows the curve.
+        for (int i = 0; i < 12; i++) {
+          vec3 center = panelCenter(i, u_time);
+          float facing = dot(normal, center);
+          if (facing > 0.45) {
+            vec3 referenceUp = abs(center.y) > 0.94 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+            vec3 tangentRight = normalize(cross(referenceUp, center));
+            vec3 tangentUp = normalize(cross(center, tangentRight));
+            vec2 panelPoint = vec2(dot(normal, tangentRight), dot(normal, tangentUp)) / facing;
+            vec2 panelUV = panelPoint / vec2(0.66, 0.44) * 0.5 + 0.5;
+            float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
+            float opacity = (1.0 - smoothstep(0.86, 1.0, edge)) * step(0.0, panelUV.x) * step(panelUV.x, 1.0) * step(0.0, panelUV.y) * step(panelUV.y, 1.0);
+            float column = float(i - (i / 4) * 4);
+            float row = float(i / 4);
+            vec2 atlasUV = vec2((column + panelUV.x) * 0.25, 1.0 - (row + (1.0 - panelUV.y)) / 3.0);
+            vec3 painting = texture2D(u_artwork, atlasUV).rgb;
+            color = mix(color, painting, opacity);
+          }
+        }
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
         // gives the painted world a gentle change in light as the viewer travels.
@@ -130,13 +158,12 @@
         vec3 keyDirection = normalize(vec3(cos(u_time * 0.055), 0.58 + 0.08 * sin(u_time * 0.07), sin(u_time * 0.055)));
         float key = max(dot(insideNormal, keyDirection), 0.0);
         float bounce = 0.018 * (0.5 + 0.5 * sin(u_time * 0.12 + normal.x * 2.1 + normal.z * 1.7));
-        vec3 ambient = vec3(0.96, 0.95, 0.92);
+        vec3 ambient = vec3(1.0);
         vec3 warmKey = vec3(0.09, 0.06, 0.03) * key;
         color = color * (ambient + warmKey + vec3(bounce));
         color += vec3(0.010, 0.006, 0.003) * pow(key, 5.0);
-        float vignette = 1.0 - 0.10 * dot(screen, screen);
+        float vignette = 1.0 - 0.04 * dot(screen, screen);
         color = color * vignette;
-        color = color / (vec3(0.94) + color * 0.08);
         gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
       }
     `);
@@ -206,7 +233,7 @@
 
   function makeSphereTexture(images) {
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    const width = Math.min(8192, Math.floor(maxTextureSize / 8) * 8);
+    const width = Math.min(4096, Math.floor(maxTextureSize / 8) * 8);
     const height = width / 2;
     const fallback = images.find(Boolean);
     const base = document.createElement("canvas");
@@ -216,8 +243,8 @@
     const baseTileWidth = base.width / 4;
     const baseTileHeight = base.height / 3;
 
-    // Every part of the sky starts with the paintings themselves. A blurred
-    // mosaic supplies the shared color material between the sharper works.
+    // Keep the shell's material fixed: this low-detail painting mosaic softly
+    // joins the moving high-resolution panels without duplicating them underneath.
     images.forEach((loadedImage, index) => {
       const image = loadedImage || fallback;
       if (!image) return;
@@ -238,16 +265,26 @@
     context.drawImage(base, 0, 0, width, height);
     context.filter = "none";
 
-    // Place complete works over that shared field and feather all four edges.
-    // The 4 by 3 cells match the 2:1 equirectangular map, so source proportions
-    // are retained in the canvas while the finished surface curves around the viewer.
-    const tileWidth = width / 4;
-    const tileHeight = height / 3;
-    const panel = document.createElement("canvas");
+    return map;
+  }
+
+  function makeArtworkAtlas(images) {
+    const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    const width = Math.min(8192, maxTextureSize);
+    const map = document.createElement("canvas");
+    map.width = width;
+    map.height = width / 2;
+    const context = map.getContext("2d", { alpha: false });
+    const fallback = images.find(Boolean);
+    const tileWidth = map.width / 4;
+    const tileHeight = map.height / 3;
     images.forEach((loadedImage, index) => {
       const image = loadedImage || fallback;
       if (!image) return;
-      drawPaintingPanel(context, image, index, tileWidth, tileHeight, panel);
+      const x = (index % 4) * tileWidth;
+      const y = Math.floor(index / 4) * tileHeight;
+      if (index === 0) drawLandscape(context, image, contain, x, y, tileWidth, tileHeight);
+      else contain(context, image, x, y, tileWidth, tileHeight);
     });
     return map;
   }
@@ -265,20 +302,25 @@
     const context = map.getContext("2d", { alpha: false });
     const tileWidth = map.width / 4;
     const tileHeight = map.height / 3;
-    const panel = document.createElement("canvas");
     for (let index = 0; index < artwork.length; index += 1) {
       const image = await loadHighResolutionImage(artwork[index]);
       if (image) {
-        drawPaintingPanel(context, image, index, tileWidth, tileHeight, panel);
+        const x = (index % 4) * tileWidth;
+        const y = Math.floor(index / 4) * tileHeight;
+        context.clearRect(x, y, tileWidth, tileHeight);
+        if (index === 0) drawLandscape(context, image, contain, x, y, tileWidth, tileHeight);
+        else contain(context, image, x, y, tileWidth, tileHeight);
         image.onload = null;
         image.onerror = null;
         image.removeAttribute("src");
       }
     }
-    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, map);
     gl.generateMipmap(gl.TEXTURE_2D);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   function buildWorld(images) {
@@ -294,6 +336,7 @@
       gl.enableVertexAttribArray(positionAttribute);
       gl.vertexAttribPointer(positionAttribute, 2, gl.FLOAT, false, 0, 0);
       const pano = makeSphereTexture(images);
+      artworkMap = makeArtworkAtlas(images);
       texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -303,7 +346,17 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.generateMipmap(gl.TEXTURE_2D);
+      artworkTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, artworkMap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.generateMipmap(gl.TEXTURE_2D);
       gl.uniform1i(gl.getUniformLocation(program, "u_sphere"), 0);
+      gl.uniform1i(gl.getUniformLocation(program, "u_artwork"), 1);
       gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
       gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
       gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
@@ -313,10 +366,12 @@
       gl.uniform1f(gl.getUniformLocation(program, "u_time"), 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
       resize();
       loading.classList.add("done");
       render();
-      sharpenSphereArtwork(pano).catch(error => console.warn("High-resolution sphere artwork was unavailable", error));
+      sharpenSphereArtwork(artworkMap).catch(error => console.warn("High-resolution sphere artwork was unavailable", error));
     } catch (error) {
       console.error("Sphere could not be prepared", error);
       loading.innerHTML = '<span>The sphere could not be opened in this browser.</span>';
@@ -384,6 +439,9 @@
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
@@ -415,18 +473,6 @@
     return ray.map(value => value / rayLength);
   }
 
-  function rotateAroundAxis(value, axis, angle) {
-    const c = Math.cos(angle);
-    const s = Math.sin(angle);
-    const cross = [
-      axis[1] * value[2] - axis[2] * value[1],
-      axis[2] * value[0] - axis[0] * value[2],
-      axis[0] * value[1] - axis[1] * value[0]
-    ];
-    const dot = axis[0] * value[0] + axis[1] * value[1] + axis[2] * value[2];
-    return value.map((component, index) => component * c + cross[index] * s + axis[index] * dot * (1 - c));
-  }
-
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
     const podY = 1.12;
@@ -439,15 +485,27 @@
     const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
     const normalLength = Math.hypot(localHit[0], localHit[2], localHit[1] / podY);
     const surfaceNormal = [localHit[0] / normalLength, (localHit[1] / podY) / normalLength, localHit[2] / normalLength];
-    const driftAxisLength = Math.hypot(0.82, 0.57);
-    const driftAxis = [0.82 / driftAxisLength, 0, -0.57 / driftAxisLength];
-    const paintedDirection = rotateAroundAxis(surfaceNormal, driftAxis, time * 0.08);
-    const longitude = Math.atan2(paintedDirection[2], paintedDirection[0]);
-    const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
-    const v = 0.5 + paintedDirection[1] * 0.5;
-    const column = Math.min(3, Math.floor(u * 4));
-    const row = Math.min(2, Math.floor(v * 3));
-    return row * 4 + column;
+    for (let index = 0; index < 12; index += 1) {
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      const baseLongitude = (column - 1.5) * Math.PI / 2;
+      const baseLatitude = 0.78 - row * 0.78;
+      const travel = time * 0.035 * (1 + 0.08 * Math.sin(index * 1.7)) + index * 0.025;
+      const latitude = ((baseLatitude - travel + 1.12) % 2.24 + 2.24) % 2.24 - 1.12;
+      const longitude = baseLongitude - travel * 0.72;
+      const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
+      const facing = surfaceNormal[0] * center[0] + surfaceNormal[1] * center[1] + surfaceNormal[2] * center[2];
+      if (facing <= 0.45) continue;
+      const referenceUp = Math.abs(center[1]) > 0.94 ? [0, 0, 1] : [0, 1, 0];
+      const tangentRight = [referenceUp[1] * center[2] - referenceUp[2] * center[1], referenceUp[2] * center[0] - referenceUp[0] * center[2], referenceUp[0] * center[1] - referenceUp[1] * center[0]];
+      const rightLength = Math.hypot(...tangentRight);
+      tangentRight.forEach((value, axis) => tangentRight[axis] = value / rightLength);
+      const tangentUp = [center[1] * tangentRight[2] - center[2] * tangentRight[1], center[2] * tangentRight[0] - center[0] * tangentRight[2], center[0] * tangentRight[1] - center[1] * tangentRight[0]];
+      const px = (surfaceNormal[0] * tangentRight[0] + surfaceNormal[1] * tangentRight[1] + surfaceNormal[2] * tangentRight[2]) / facing / 0.66;
+      const py = (surfaceNormal[0] * tangentUp[0] + surfaceNormal[1] * tangentUp[1] + surfaceNormal[2] * tangentUp[2]) / facing / 0.44;
+      if (Math.abs(px) <= 1 && Math.abs(py) <= 1) return index;
+    }
+    return -1;
   }
 
   canvas.addEventListener("pointerdown", event => {
@@ -471,7 +529,10 @@
     const pointer = pointerStart;
     pointerStart = null;
     canvas.classList.remove("dragging");
-    if (!pointer.moved && entry.classList.contains("leaving")) showWork(artworkAt(event.clientX, event.clientY));
+    if (!pointer.moved && entry.classList.contains("leaving")) {
+      const work = artworkAt(event.clientX, event.clientY);
+      if (work >= 0) showWork(work);
+    }
   }
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
