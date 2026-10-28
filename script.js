@@ -2,6 +2,7 @@
   const artwork = Array.from({ length: 12 }, (_, i) => `artwork/${String(i + 1).padStart(2, "0")}.jpg`);
   const skyAssets = artwork;
   const canvas = document.getElementById("sky");
+  const throneAngel = document.getElementById("throne-angel");
   const entry = document.getElementById("entry");
   const enterButton = document.getElementById("enter");
   const loading = document.getElementById("loading");
@@ -40,6 +41,59 @@
   let currentWork = 0;
   let pointerStart = null;
   let zoomFactor = 1;
+
+  function addEyeOrbit(group, ringRadius, count, eyeWidth, eyeHeight) {
+    const ns = "http://www.w3.org/2000/svg";
+    const circle = document.createElementNS(ns, "circle");
+    circle.setAttribute("cx", "200");
+    circle.setAttribute("cy", "200");
+    circle.setAttribute("r", String(ringRadius));
+    circle.setAttribute("class", "wheel-rim");
+    group.appendChild(circle);
+    for (let i = 0; i < count; i += 1) {
+      const angle = (i / count) * 360;
+      const eye = document.createElementNS(ns, "g");
+      eye.setAttribute("transform", `rotate(${angle} 200 200) translate(200 ${200 - ringRadius})`);
+      eye.setAttribute("class", "wheel-eye");
+      eye.innerHTML = `<path d="M ${-eyeWidth} 0 Q 0 ${-eyeHeight} ${eyeWidth} 0 Q 0 ${eyeHeight} ${-eyeWidth} 0Z"/><ellipse rx="${eyeWidth * 0.42}" ry="${eyeHeight * 0.58}" fill="#392a20"/><circle cx="${eyeWidth * 0.1}" cy="${-eyeHeight * 0.13}" r="${Math.max(1.2, eyeWidth * 0.16)}" fill="#fff8e8"/>`;
+      group.appendChild(eye);
+    }
+  }
+
+  addEyeOrbit(document.getElementById("wheel-a"), 166, 28, 5.2, 10.2);
+  addEyeOrbit(document.getElementById("wheel-b"), 122, 22, 6.2, 11.5);
+  addEyeOrbit(document.getElementById("wheel-c"), 78, 16, 7.2, 13);
+
+  function positionThroneAngel() {
+    if (!entry.classList.contains("leaving") || dialog.open) {
+      throneAngel.classList.remove("visible");
+      return;
+    }
+    const angle = time * 0.026 - Math.PI / 2;
+    const world = [Math.cos(angle) * 19.2, Math.sin(angle * 0.69) * 4.2, Math.sin(angle) * 19.2];
+    const delta = world.map((value, axis) => value - camera[axis]);
+    const dirs = basis();
+    const depth = delta[0] * dirs.forward[0] + delta[1] * dirs.forward[1] + delta[2] * dirs.forward[2];
+    if (depth <= 0.5) {
+      throneAngel.classList.remove("visible");
+      return;
+    }
+    const focal = window.innerHeight / (2 * Math.tan((Math.PI / 2.35) / 2));
+    const horizontal = delta[0] * dirs.right[0] + delta[1] * dirs.right[1] + delta[2] * dirs.right[2];
+    const vertical = delta[0] * dirs.up[0] + delta[1] * dirs.up[1] + delta[2] * dirs.up[2];
+    const x = window.innerWidth / 2 + (horizontal / depth) * focal;
+    const y = window.innerHeight / 2 - (vertical / depth) * focal;
+    // Oversize it relative to the painted sphere so the throne can loom past
+    // the viewport edges, like a colossal presence moving through the heavens.
+    const size = Math.max(Math.max(window.innerWidth, window.innerHeight) * 0.82,
+      Math.min(Math.max(window.innerWidth, window.innerHeight) * 2.35, (focal / depth) * 38));
+    throneAngel.style.left = `${x}px`;
+    throneAngel.style.top = `${y}px`;
+    throneAngel.style.width = `${size}px`;
+    throneAngel.style.height = `${size}px`;
+    throneAngel.style.opacity = String(Math.max(0.48, Math.min(0.94, 1 - depth / 96)));
+    throneAngel.classList.add("visible");
+  }
 
   const sources = [];
   let loaded = 0;
@@ -236,10 +290,12 @@
             float combinedOpacity = panelOpacity + secondOpacity;
             float panelMix = panelOpacity / max(combinedOpacity, 0.0001);
             vec3 blendedPanels = mix(secondColor, panelColor, panelMix);
-            float coverage = max(0.94, min(combinedOpacity, 1.0));
+            // A little light from the painted nebula passes through the panels,
+            // giving the artwork-coated sphere a translucent, layered quality.
+            float coverage = max(0.94, min(combinedOpacity, 1.0)) * 0.74;
             color = mix(color, blendedPanels, coverage);
           } else {
-            color = mix(color, panelColor, panelOpacity);
+            color = mix(color, panelColor, panelOpacity * 0.74);
           }
         }
 
@@ -470,6 +526,7 @@
     lastFrame = now;
     time += delta;
     moveCamera(delta);
+    positionThroneAngel();
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
@@ -483,6 +540,7 @@
 
   enterButton.addEventListener("click", () => {
     entry.classList.add("leaving");
+    document.body.classList.add("entered");
     hint.hidden = false;
     controls.hidden = false;
     document.getElementById("position").hidden = false;

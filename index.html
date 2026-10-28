@@ -7,11 +7,12 @@
   <meta name="description" content="A continuous, immersive world of abstract paintings by Joe Guy.">
   <title>Joe Guy — Inside the Sphere</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=sky-37" defer></script>
+  <script src="script.js?v=sky-38" defer></script>
 </head>
 <body>
   <audio id="background-music" src="audio/yung-leion2.wav" preload="none" loop></audio>
   <canvas id="sky" aria-label="A 360 degree abstract painted world. Drag to look around and click a painting to view it in full size."></canvas>
+  <div class="throne-angel" id="throne-angel" aria-hidden="true"><svg class="throne-svg" id="throne-svg" viewBox="0 0 400 400" focusable="false"><defs><radialGradient id="eye-ivory" cx="42%" cy="32%"><stop stop-color="#fff4d8"/><stop offset=".58" stop-color="#d7b879"/><stop offset="1" stop-color="#745637"/></radialGradient><linearGradient id="wheel-bronze" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f3dca7"/><stop offset=".48" stop-color="#bc8950"/><stop offset="1" stop-color="#594431"/></linearGradient><filter id="angel-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g class="throne-wheel wheel-a" id="wheel-a"></g><g class="throne-wheel wheel-b" id="wheel-b"></g><g class="throne-wheel wheel-c" id="wheel-c"></g><g class="throne-core"><circle cx="200" cy="200" r="25" fill="url(#wheel-bronze)" opacity=".9"/><path d="M175 200 Q200 174 225 200 Q200 226 175 200Z" fill="url(#eye-ivory)" stroke="#f5d89c" stroke-width="2"/><ellipse cx="200" cy="200" rx="7" ry="12" fill="#33281f"/><circle cx="202" cy="195" r="2.4" fill="#fff7e3"/></g></svg></div>
   <div class="loading" id="loading"><span class="loading-mark"></span><span>BUILDING THE WORLD</span><span class="loading-value">00%</span></div>
 
   <header class="hud">
