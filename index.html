@@ -7,7 +7,7 @@
   <meta name="description" content="A continuous, immersive world of abstract paintings by Joe Guy.">
   <title>Joe Guy — Inside the Sphere</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=sky-35" defer></script>
+  <script src="script.js?v=sky-36" defer></script>
 </head>
 <body>
   <canvas id="sky" aria-label="A 360 degree abstract painted world. Drag to look around and click a painting to view it in full size."></canvas>
@@ -46,7 +46,12 @@
     <div class="viewer-top">
       <span class="viewer-index" id="viewer-index">01 / 12</span>
       <div class="viewer-actions">
-        <button class="mode-button" id="mode-button" type="button" aria-pressed="false">100%</button>
+        <div class="viewer-zoom" aria-label="Painting zoom controls">
+          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+          <span id="zoom-value" aria-live="polite">100%</span>
+          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button class="fit-button" id="fit-button" type="button">FIT</button>
+        </div>
         <button class="viewer-step" id="prev" type="button" aria-label="Previous painting">← <span>PREVIOUS</span></button>
         <button class="viewer-step" id="next" type="button" aria-label="Next painting"><span>NEXT</span> →</button>
         <button class="viewer-close" id="close-viewer" type="button">CLOSE <b aria-hidden="true">×</b></button>
