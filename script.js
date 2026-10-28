@@ -246,22 +246,22 @@
     base.width = width / 2;
     base.height = height / 2;
     const baseContext = base.getContext("2d", { alpha: false });
-    const baseTileWidth = base.width / 4;
-    const baseTileHeight = base.height / 3;
+    const baseTileWidth = base.width / 12;
+    const baseTileHeight = base.height / 6;
 
-    // Keep the shell's material fixed: this low-detail painting mosaic softly
-    // joins the moving high-resolution panels without duplicating them underneath.
-    images.forEach((loadedImage, index) => {
-      const image = loadedImage || fallback;
-      if (!image) return;
-      const x = (index % 4) * baseTileWidth;
-      const y = Math.floor(index / 4) * baseTileHeight;
-      baseContext.save();
-      baseContext.filter = "blur(6px) saturate(1.06) brightness(.94)";
-      if (index === 0) drawLandscape(baseContext, image, cover, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
-      else cover(baseContext, image, x - 18, y - 18, baseTileWidth + 36, baseTileHeight + 36);
-      baseContext.restore();
-    });
+    // A continuous underpainting of small, softened fragments fills every gap
+    // between the full-size panels while keeping the shell fixed in place.
+    baseContext.filter = "blur(10px) saturate(1.08) brightness(.94)";
+    for (let row = 0; row < 6; row += 1) {
+      for (let column = 0; column < 12; column += 1) {
+        const index = (column * 5 + row * 7) % images.length;
+        const image = images[index] || fallback;
+        if (!image) continue;
+        const x = column * baseTileWidth;
+        const y = row * baseTileHeight;
+        cover(baseContext, image, x - 10, y - 10, baseTileWidth + 20, baseTileHeight + 20);
+      }
+    }
 
     const map = document.createElement("canvas");
     map.width = width;
