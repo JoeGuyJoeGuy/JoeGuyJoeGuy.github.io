@@ -116,13 +116,18 @@
         // The room is spherical, but each painting is a flat tangent-facing plane.
         // That keeps its original proportions instead of stretching it over the shell.
         float nearestPanel = distanceToShell + 1.0;
-        float halfWidth = u_radius * 0.27;
-        float halfHeight = halfWidth / 1.5;
         for (int i = 0; i < 12; i++) {
           float index = float(i);
-          float angle = (index - 4.0) * (PI / 6.0);
-          vec3 panelNormal = normalize(vec3(sin(angle), 0.0, -cos(angle)));
-          vec3 panelRight = normalize(vec3(cos(angle), 0.0, sin(angle)));
+          float column = mod(index, 4.0);
+          float row = floor(index / 4.0);
+          float longitude = (column - 1.0) * (PI * 0.5);
+          float latitude = (1.0 - row) * 0.80;
+          float cosLatitude = cos(latitude);
+          vec3 panelNormal = normalize(vec3(sin(longitude) * cosLatitude, sin(latitude), -cos(longitude) * cosLatitude));
+          vec3 panelRight = normalize(vec3(cos(longitude), 0.0, sin(longitude)));
+          vec3 panelUp = normalize(vec3(-sin(longitude) * sin(latitude), cosLatitude, cos(longitude) * sin(latitude)));
+          float halfWidth = (u_radius - 0.62) * (PI * 0.25) * cosLatitude * 1.14;
+          float halfHeight = halfWidth / 1.5;
           vec3 panelCenter = panelNormal * (u_radius - 0.62);
           float denominator = dot(ray, panelNormal);
           if (abs(denominator) > 0.0001) {
@@ -130,7 +135,7 @@
             if (panelDistance > 0.0 && panelDistance < nearestPanel) {
               vec3 panelHit = u_camera + ray * panelDistance - panelCenter;
               vec2 panelUV = vec2(dot(panelHit, panelRight) / (halfWidth * 2.0) + 0.5,
-                                  panelHit.y / (halfHeight * 2.0) + 0.5);
+                                  dot(panelHit, panelUp) / (halfHeight * 2.0) + 0.5);
               if (panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0) {
                 float edge = min(min(panelUV.x, 1.0 - panelUV.x), min(panelUV.y, 1.0 - panelUV.y));
                 float alpha = smoothstep(0.0, 0.17, edge);
@@ -215,16 +220,15 @@
     const hazeContext = haze.getContext("2d");
     hazeContext.filter = "blur(160px)";
     hazeContext.drawImage(map, 0, 0);
-    context.globalAlpha = 0.35;
+    context.clearRect(0, 0, width, height);
     context.drawImage(haze, 0, 0);
-    context.globalAlpha = 1;
     return map;
   }
 
   function makeArtAtlas(images) {
     const width = 4096;
     const tileWidth = width / 4;
-    const tileHeight = 768;
+    const tileHeight = 684;
     const atlas = document.createElement("canvas");
     atlas.width = width;
     atlas.height = tileHeight * 3;
@@ -394,20 +398,25 @@
     const ray = rayForScreen(x, y);
     let closest = Infinity;
     let selected = 0;
-    const halfWidth = radius * 0.27;
-    const halfHeight = halfWidth / 1.5;
     for (let index = 0; index < 12; index += 1) {
-      const angle = (index - 4) * (Math.PI / 6);
-      const normal = [Math.sin(angle), 0, -Math.cos(angle)];
-      const right = [Math.cos(angle), 0, Math.sin(angle)];
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      const longitude = (column - 1) * (Math.PI / 2);
+      const latitude = (1 - row) * 0.80;
+      const cosLatitude = Math.cos(latitude);
+      const normal = [Math.sin(longitude) * cosLatitude, Math.sin(latitude), -Math.cos(longitude) * cosLatitude];
+      const right = [Math.cos(longitude), 0, Math.sin(longitude)];
+      const up = [-Math.sin(longitude) * Math.sin(latitude), cosLatitude, Math.cos(longitude) * Math.sin(latitude)];
+      const halfWidth = (radius - 0.62) * (Math.PI / 4) * cosLatitude * 1.14;
+      const halfHeight = halfWidth / 1.5;
       const center = normal.map(value => value * (radius - 0.62));
-      const denominator = ray[0] * normal[0] + ray[2] * normal[2];
+      const denominator = ray[0] * normal[0] + ray[1] * normal[1] + ray[2] * normal[2];
       if (Math.abs(denominator) < 0.0001) continue;
-      const distance = ((center[0] - camera[0]) * normal[0] + (center[2] - camera[2]) * normal[2]) / denominator;
+      const distance = ((center[0] - camera[0]) * normal[0] + (center[1] - camera[1]) * normal[1] + (center[2] - camera[2]) * normal[2]) / denominator;
       if (distance <= 0 || distance >= closest) continue;
       const hit = camera.map((value, axis) => value + ray[axis] * distance - center[axis]);
-      const u = (hit[0] * right[0] + hit[2] * right[2]) / (halfWidth * 2) + 0.5;
-      const v = hit[1] / (halfHeight * 2) + 0.5;
+      const u = (hit[0] * right[0] + hit[1] * right[1] + hit[2] * right[2]) / (halfWidth * 2) + 0.5;
+      const v = (hit[0] * up[0] + hit[1] * up[1] + hit[2] * up[2]) / (halfHeight * 2) + 0.5;
       if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
         closest = distance;
         selected = index;
