@@ -132,18 +132,22 @@
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
-        // A tangent-plane projection keeps the image rectangular as it follows the curve.
+        // Intersect the ray with a flat panel at its moving point on the shell.
         for (int i = 0; i < 12; i++) {
           vec3 center = panelCenter(i, u_time);
-          float facing = dot(normal, center);
-          if (facing > 0.45) {
+          vec3 panelPosition = u_radius * vec3(center.x, center.y * POD_Y, center.z);
+          float facing = dot(ray, center);
+          if (facing > 0.15) {
             vec3 referenceUp = abs(center.y) > 0.94 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
             vec3 tangentRight = normalize(cross(referenceUp, center));
             vec3 tangentUp = normalize(cross(center, tangentRight));
-            vec2 panelPoint = vec2(dot(normal, tangentRight), dot(normal, tangentUp)) / facing;
+            float panelDistance = dot(panelPosition - u_camera, center) / facing;
+            vec3 panelHit = u_camera + ray * panelDistance;
+            vec3 panelOffset = panelHit - panelPosition;
+            vec2 panelPoint = vec2(dot(panelOffset, tangentRight), dot(panelOffset, tangentUp)) / u_radius;
             vec2 panelUV = panelPoint / vec2(0.66, 0.44) * 0.5 + 0.5;
             float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
-            float opacity = (1.0 - smoothstep(0.86, 1.0, edge)) * step(0.0, panelUV.x) * step(panelUV.x, 1.0) * step(0.0, panelUV.y) * step(panelUV.y, 1.0);
+            float opacity = (1.0 - smoothstep(0.86, 1.0, edge)) * step(0.0, panelUV.x) * step(panelUV.x, 1.0) * step(0.0, panelUV.y) * step(panelUV.y, 1.0) * step(0.0, panelDistance);
             float column = float(i - (i / 4) * 4);
             float row = float(i / 4);
             vec2 atlasUV = vec2((column + panelUV.x) * 0.25, 1.0 - (row + (1.0 - panelUV.y)) / 3.0);
@@ -494,15 +498,20 @@
       const latitude = ((baseLatitude - travel + 1.12) % 2.24 + 2.24) % 2.24 - 1.12;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
-      const facing = surfaceNormal[0] * center[0] + surfaceNormal[1] * center[1] + surfaceNormal[2] * center[2];
-      if (facing <= 0.45) continue;
+      const panelPosition = [radius * center[0], radius * center[1] * 1.12, radius * center[2]];
+      const facing = ray[0] * center[0] + ray[1] * center[1] + ray[2] * center[2];
+      if (facing <= 0.15) continue;
       const referenceUp = Math.abs(center[1]) > 0.94 ? [0, 0, 1] : [0, 1, 0];
       const tangentRight = [referenceUp[1] * center[2] - referenceUp[2] * center[1], referenceUp[2] * center[0] - referenceUp[0] * center[2], referenceUp[0] * center[1] - referenceUp[1] * center[0]];
       const rightLength = Math.hypot(...tangentRight);
       tangentRight.forEach((value, axis) => tangentRight[axis] = value / rightLength);
       const tangentUp = [center[1] * tangentRight[2] - center[2] * tangentRight[1], center[2] * tangentRight[0] - center[0] * tangentRight[2], center[0] * tangentRight[1] - center[1] * tangentRight[0]];
-      const px = (surfaceNormal[0] * tangentRight[0] + surfaceNormal[1] * tangentRight[1] + surfaceNormal[2] * tangentRight[2]) / facing / 0.66;
-      const py = (surfaceNormal[0] * tangentUp[0] + surfaceNormal[1] * tangentUp[1] + surfaceNormal[2] * tangentUp[2]) / facing / 0.44;
+      const panelDistance = ((panelPosition[0] - camera[0]) * center[0] + (panelPosition[1] - camera[1]) * center[1] + (panelPosition[2] - camera[2]) * center[2]) / facing;
+      if (panelDistance <= 0) continue;
+      const panelHit = camera.map((value, axis) => value + ray[axis] * panelDistance);
+      const panelOffset = panelHit.map((value, axis) => value - panelPosition[axis]);
+      const px = (panelOffset[0] * tangentRight[0] + panelOffset[1] * tangentRight[1] + panelOffset[2] * tangentRight[2]) / radius / 0.66;
+      const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / 0.44;
       if (Math.abs(px) <= 1 && Math.abs(py) <= 1) return index;
     }
     return -1;
