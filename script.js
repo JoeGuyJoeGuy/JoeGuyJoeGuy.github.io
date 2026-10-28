@@ -152,10 +152,10 @@
         vec3 keyDirection = normalize(vec3(cos(u_time * 0.055), 0.58 + 0.08 * sin(u_time * 0.07), sin(u_time * 0.055)));
         float key = max(dot(insideNormal, keyDirection), 0.0);
         float bounce = 0.018 * (0.5 + 0.5 * sin(u_time * 0.12 + normal.x * 2.1 + normal.z * 1.7));
-        vec3 ambient = vec3(0.88, 0.86, 0.83);
-        vec3 warmKey = vec3(0.18, 0.12, 0.07) * key;
+        vec3 ambient = vec3(0.96, 0.95, 0.92);
+        vec3 warmKey = vec3(0.09, 0.06, 0.03) * key;
         color = color * (ambient + warmKey + vec3(bounce));
-        color += vec3(0.022, 0.013, 0.007) * pow(key, 5.0);
+        color += vec3(0.010, 0.006, 0.003) * pow(key, 5.0);
         float vignette = 1.0 - 0.10 * dot(screen, screen);
         color = color * vignette;
         color = color / (vec3(0.94) + color * 0.08);
