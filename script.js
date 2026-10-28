@@ -13,7 +13,10 @@
   const dialogImage = document.getElementById("viewer-image");
   const dialogIndex = document.getElementById("viewer-index");
   const stage = document.getElementById("viewer-stage");
-  const modeButton = document.getElementById("mode-button");
+  const zoomOutButton = document.getElementById("zoom-out");
+  const zoomInButton = document.getElementById("zoom-in");
+  const zoomValue = document.getElementById("zoom-value");
+  const fitButton = document.getElementById("fit-button");
   const held = new Set();
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true, powerPreference: "high-performance" });
 
@@ -35,7 +38,7 @@
   let opened = false;
   let currentWork = 0;
   let pointerStart = null;
-  let actualSize = false;
+  let zoomFactor = 1;
 
   const sources = [];
   let loaded = 0;
@@ -579,6 +582,8 @@
     if (dialog.open) {
       if (event.key === "ArrowLeft") { event.preventDefault(); showWork((currentWork + 11) % 12); }
       if (event.key === "ArrowRight") { event.preventDefault(); showWork((currentWork + 1) % 12); }
+      if (event.key === "+" || event.key === "=") { event.preventDefault(); applyZoom(zoomFactor * 1.25, true); }
+      if (event.key === "-") { event.preventDefault(); applyZoom(zoomFactor / 1.25, true); }
       return;
     }
     const key = event.key.toLowerCase();
@@ -599,10 +604,11 @@
 
   function showWork(index) {
     currentWork = (index + 12) % 12;
-    actualSize = false;
-    stage.classList.remove("actual-size");
-    modeButton.textContent = "100%";
-    modeButton.setAttribute("aria-pressed", "false");
+    zoomFactor = 1;
+    stage.classList.remove("zoomed");
+    dialogImage.style.width = "";
+    dialogImage.style.height = "";
+    zoomValue.textContent = "100%";
     stage.scrollTo(0, 0);
     dialogImage.src = artwork[currentWork];
     dialogImage.alt = `Abstract painting ${String(currentWork + 1).padStart(2, "0")}`;
@@ -613,12 +619,39 @@
   document.getElementById("close-viewer").addEventListener("click", () => dialog.close());
   document.getElementById("prev").addEventListener("click", () => showWork((currentWork + 11) % 12));
   document.getElementById("next").addEventListener("click", () => showWork((currentWork + 1) % 12));
-  modeButton.addEventListener("click", () => {
-    actualSize = !actualSize;
-    stage.classList.toggle("actual-size", actualSize);
-    modeButton.textContent = actualSize ? "FIT" : "100%";
-    modeButton.setAttribute("aria-pressed", String(actualSize));
-    stage.scrollTo(0, 0);
+  function applyZoom(nextFactor, preserveCenter = false) {
+    if (!dialogImage.naturalWidth || !dialogImage.naturalHeight) return;
+    const oldWidth = dialogImage.getBoundingClientRect().width;
+    const oldHeight = dialogImage.getBoundingClientRect().height;
+    const fitWidth = Math.min(stage.clientWidth, window.innerWidth * 0.96, 2400);
+    const fitHeight = Math.min(stage.clientHeight, window.innerHeight - 116);
+    const fitScale = Math.min(fitWidth / dialogImage.naturalWidth, fitHeight / dialogImage.naturalHeight, 1);
+    const maxZoom = 1 / fitScale;
+    zoomFactor = Math.max(1, Math.min(maxZoom, nextFactor));
+    const width = dialogImage.naturalWidth * fitScale * zoomFactor;
+    const height = dialogImage.naturalHeight * fitScale * zoomFactor;
+    dialogImage.style.width = `${width}px`;
+    dialogImage.style.height = `${height}px`;
+    stage.classList.toggle("zoomed", zoomFactor > 1.001);
+    zoomValue.textContent = `${Math.round(zoomFactor * 100)}%`;
+    if (preserveCenter && oldWidth && oldHeight) {
+      stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (width / oldWidth) - stage.clientWidth / 2;
+      stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (height / oldHeight) - stage.clientHeight / 2;
+    } else if (zoomFactor === 1) {
+      stage.scrollTo(0, 0);
+    }
+  }
+  dialogImage.addEventListener("load", () => applyZoom(zoomFactor));
+  zoomInButton.addEventListener("click", () => applyZoom(zoomFactor * 1.25, true));
+  zoomOutButton.addEventListener("click", () => applyZoom(zoomFactor / 1.25, true));
+  fitButton.addEventListener("click", () => applyZoom(1));
+  stage.addEventListener("wheel", event => {
+    if (!event.ctrlKey || !dialog.open) return;
+    event.preventDefault();
+    applyZoom(zoomFactor * (event.deltaY < 0 ? 1.15 : 1 / 1.15), true);
+  }, { passive: false });
+  window.addEventListener("resize", () => {
+    if (dialog.open && dialogImage.naturalWidth) applyZoom(zoomFactor);
   });
   dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
 
