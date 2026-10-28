@@ -94,6 +94,27 @@
       uniform float u_time;
       const float PI = 3.14159265358979323846264;
       const float POD_Y = 1.12;
+      float hash31(vec3 p) {
+        p = fract(p * 0.1031);
+        p += dot(p, p.yzx + 33.33);
+        return fract((p.x + p.y) * p.z);
+      }
+      float noise3(vec3 p) {
+        vec3 cell = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float n000 = hash31(cell + vec3(0.0, 0.0, 0.0));
+        float n100 = hash31(cell + vec3(1.0, 0.0, 0.0));
+        float n010 = hash31(cell + vec3(0.0, 1.0, 0.0));
+        float n110 = hash31(cell + vec3(1.0, 1.0, 0.0));
+        float n001 = hash31(cell + vec3(0.0, 0.0, 1.0));
+        float n101 = hash31(cell + vec3(1.0, 0.0, 1.0));
+        float n011 = hash31(cell + vec3(0.0, 1.0, 1.0));
+        float n111 = hash31(cell + vec3(1.0, 1.0, 1.0));
+        float low = mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y);
+        float high = mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y);
+        return mix(low, high, f.z);
+      }
       vec3 panelCenter(int index, float clock) {
         float column = float(index - (index / 6) * 6);
         float row = float(index / 6);
@@ -127,7 +148,26 @@
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
-        vec3 color = vec3(0.012, 0.011, 0.010);
+        // Deep, painted space replaces the plain black gaps. Its pigment comes
+        // from the paintings themselves, with soft clouding and restrained dust.
+        vec3 spaceDirection = normalize(positionOnShell);
+        vec2 spaceUV = vec2(atan(spaceDirection.z, spaceDirection.x) / (2.0 * PI) + 0.5,
+                            asin(clamp(spaceDirection.y, -1.0, 1.0)) / PI + 0.5);
+        float paletteColumn = mod(floor(spaceUV.x * 4.0), 4.0);
+        float paletteRow = clamp(floor((1.0 - spaceUV.y) * 3.0), 0.0, 2.0);
+        vec2 paletteUV = vec2((paletteColumn + 0.5) * 0.25, 1.0 - (paletteRow + 0.5) / 3.0);
+        vec3 pigment = texture2D(u_artwork, paletteUV).rgb;
+        float cloud = noise3(spaceDirection * 5.5 + vec3(0.0, 0.0, u_time * 0.003));
+        float wisps = noise3(spaceDirection * 15.0 + vec3(4.2, -1.7, 0.0));
+        float nebula = smoothstep(0.45, 0.82, cloud) * 0.22 + smoothstep(0.64, 0.9, wisps) * 0.07;
+        vec3 color = vec3(0.006, 0.008, 0.018) + pigment * nebula * vec3(0.42, 0.36, 0.31);
+        vec3 starCell = floor(spaceDirection * 240.0);
+        vec3 starLocal = fract(spaceDirection * 240.0) - vec3(0.5);
+        vec3 starOffset = vec3(hash31(starCell + vec3(1.0, 0.0, 0.0)),
+                               hash31(starCell + vec3(0.0, 1.0, 0.0)),
+                               hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
+        float star = (1.0 - smoothstep(0.012, 0.034, length(starLocal - starOffset))) * step(0.997, hash31(starCell));
+        color += vec3(0.72, 0.49, 0.29) * star * 0.24;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
