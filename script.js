@@ -422,6 +422,66 @@
     }
   }
 
+  function appendEyeIris(data) {
+    const spokes = 96;
+    const bands = 7;
+    const innerRadius = 0.15;
+    const outerRadius = 0.36;
+    function vertex(radius, angle) {
+      const pulse = 0.5 + 0.5 * Math.sin(angle * 43.0 + radius * 31.0);
+      const color = [0.24 + pulse * 0.32, 0.09 + pulse * 0.19, 0.025 + pulse * 0.065];
+      const z = 0.29 + 0.10 * (1.0 - radius / outerRadius);
+      return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
+    }
+    for (let band = 0; band < bands; band += 1) {
+      const r0 = innerRadius + (outerRadius - innerRadius) * band / bands;
+      const r1 = innerRadius + (outerRadius - innerRadius) * (band + 1) / bands;
+      for (let spoke = 0; spoke < spokes; spoke += 1) {
+        const a0 = spoke / spokes * Math.PI * 2;
+        const a1 = (spoke + 1) / spokes * Math.PI * 2;
+        const p0 = vertex(r0, a0), p1 = vertex(r1, a0), p2 = vertex(r1, a1), p3 = vertex(r0, a1);
+        appendMeshVertex(data, p0.position, p0.normal, p0.color);
+        appendMeshVertex(data, p1.position, p1.normal, p1.color);
+        appendMeshVertex(data, p2.position, p2.normal, p2.color);
+        appendMeshVertex(data, p0.position, p0.normal, p0.color);
+        appendMeshVertex(data, p2.position, p2.normal, p2.color);
+        appendMeshVertex(data, p3.position, p3.normal, p3.color);
+      }
+    }
+  }
+
+  function appendEyeLidArc(data, start, end, upper) {
+    const segments = 36;
+    const sides = 8;
+    const tubeRadius = 0.105;
+    function point(segment, side) {
+      const angle = start + (end - start) * segment / segments;
+      const sideAngle = side / sides * Math.PI * 2;
+      const radial = Math.cos(sideAngle);
+      const centerX = 0.84 * Math.cos(angle);
+      const centerY = 0.55 * Math.sin(angle);
+      const raised = (upper ? 1 : -1) * 0.035;
+      const position = [centerX + Math.cos(angle) * tubeRadius * radial,
+        centerY + Math.sin(angle) * tubeRadius * radial,
+        0.18 + raised + tubeRadius * Math.sin(sideAngle)];
+      const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
+      const length = Math.hypot(...normalRaw) || 1;
+      const color = upper ? [0.38, 0.20, 0.085] : [0.56, 0.34, 0.17];
+      return { position, normal: normalRaw.map(value => value / length), color };
+    }
+    for (let segment = 0; segment < segments; segment += 1) {
+      for (let side = 0; side < sides; side += 1) {
+        const a = point(segment, side), b = point(segment + 1, side), c = point(segment + 1, side + 1), d = point(segment, side + 1);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, b.position, b.normal, b.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, d.position, d.normal, d.color);
+      }
+    }
+  }
+
   function makeThroneRing(radiusOnPlane, eyeCount, compact) {
     const data = [];
     const segments = compact ? 120 : 192;
@@ -442,13 +502,16 @@
 
   function makeThroneEye(compact) {
     const data = [];
-    const detail = compact ? [8, 12] : [12, 20];
+    const detail = compact ? [12, 18] : [18, 28];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.04], x, y, z, [0.92, 0.68, 0.32], [0.22, 0.12, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.78, 0.56, 0.27], [0.88, 0.82, 0.70], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.23], x, y, z, [0.36, 0.39, 0.09], [0.40, 0.19, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.30], x, y, z, [0.17, 0.26, 0.055], [0.018, 0.012, 0.009], ...detail);
-    appendEyeEllipsoid(data, [-0.12, 0.16, 0.34], x, y, z, [0.068, 0.084, 0.03], [1.0, 0.94, 0.80], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.04], x, y, z, [1.02, 0.72, 0.39], [0.22, 0.12, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.84, 0.56, 0.31], [0.90, 0.84, 0.74], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.405, 0.38, 0.12], [0.13, 0.055, 0.018], ...detail);
+    appendEyeIris(data);
+    appendEyeEllipsoid(data, [0, 0, 0.36], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
+    appendEyeEllipsoid(data, [-0.105, 0.12, 0.416], x, y, z, [0.067, 0.078, 0.027], [1.0, 0.96, 0.86], ...detail);
+    appendEyeLidArc(data, 0, Math.PI, true);
+    appendEyeLidArc(data, Math.PI, Math.PI * 2, false);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
