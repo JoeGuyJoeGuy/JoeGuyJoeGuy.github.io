@@ -161,19 +161,19 @@
         float filament = noise3(spaceDirection * 43.0 + vec3(-2.4, 7.1, u_time * 0.002));
         float broadCloud = smoothstep(0.35, 0.78, cloud);
         float fineCloud = smoothstep(0.48, 0.84, detail);
-        float polarHaze = smoothstep(0.62, 0.98, abs(spaceDirection.y)) * (0.34 + fineCloud * 0.66);
-        float nebula = broadCloud * 0.34 + fineCloud * 0.17 + smoothstep(0.58, 0.9, filament) * 0.075 + polarHaze * 0.26;
+        float polarHaze = smoothstep(0.58, 0.98, abs(spaceDirection.y)) * (0.42 + fineCloud * 0.58);
+        float nebula = broadCloud * 0.4 + fineCloud * 0.2 + smoothstep(0.56, 0.9, filament) * 0.09 + polarHaze * 0.36;
         vec3 pigment = mix(pigmentA, pigmentB, fineCloud * 0.7);
         pigment = mix(pigment, pigmentC, broadCloud * 0.46);
-        vec3 color = vec3(0.018, 0.019, 0.034) + pigment * nebula * vec3(0.52, 0.46, 0.42);
-        color += vec3(0.012, 0.009, 0.025) * polarHaze;
+        vec3 color = vec3(0.024, 0.027, 0.052) + pigment * nebula * vec3(0.56, 0.48, 0.42);
+        color += vec3(0.018, 0.014, 0.04) * polarHaze;
         vec3 starCell = floor(spaceDirection * 190.0);
         vec3 starLocal = fract(spaceDirection * 190.0) - vec3(0.5);
         vec3 starOffset = vec3(hash31(starCell + vec3(1.0, 0.0, 0.0)),
                                hash31(starCell + vec3(0.0, 1.0, 0.0)),
                                hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
-        float star = (1.0 - smoothstep(0.018, 0.045, length(starLocal - starOffset))) * step(0.994, hash31(starCell));
-        color += vec3(0.78, 0.59, 0.4) * star * 0.34;
+        float star = (1.0 - smoothstep(0.018, 0.045, length(starLocal - starOffset))) * step(0.99, hash31(starCell));
+        color += vec3(0.82, 0.63, 0.43) * star * 0.36;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
@@ -202,7 +202,7 @@
             bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
             if (panelDistance > 0.0 && insidePanel) {
               float edge = max(abs(panelUV.x * 2.0 - 1.0), abs(panelUV.y * 2.0 - 1.0));
-              float opacity = 1.0 - smoothstep(0.76, 1.0, edge);
+              float opacity = 1.0 - smoothstep(0.66, 1.0, edge);
               int workIndex = i - (i / 12) * 12;
               float artColumn = float(workIndex - (workIndex / 4) * 4);
               float artRow = float(workIndex / 4);
