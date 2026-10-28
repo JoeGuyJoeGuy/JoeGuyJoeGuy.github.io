@@ -426,11 +426,11 @@
     const spokes = 96;
     const bands = 7;
     const innerRadius = 0.15;
-    const outerRadius = 0.36;
+    const outerRadius = 0.34;
     function vertex(radius, angle) {
       const pulse = 0.5 + 0.5 * Math.sin(angle * 43.0 + radius * 31.0);
       const color = [0.24 + pulse * 0.32, 0.09 + pulse * 0.19, 0.025 + pulse * 0.065];
-      const z = 0.29 + 0.10 * (1.0 - radius / outerRadius);
+      const z = 0.36 + 0.10 * (1.0 - radius / outerRadius);
       return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
     }
     for (let band = 0; band < bands; band += 1) {
@@ -504,12 +504,12 @@
     const data = [];
     const detail = compact ? [12, 18] : [18, 28];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.04], x, y, z, [1.02, 0.72, 0.39], [0.22, 0.12, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.84, 0.56, 0.31], [0.90, 0.84, 0.74], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.405, 0.38, 0.12], [0.13, 0.055, 0.018], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.22, 0.12, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.98, 0.93, 0.84], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data);
-    appendEyeEllipsoid(data, [0, 0, 0.36], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
-    appendEyeEllipsoid(data, [-0.105, 0.12, 0.416], x, y, z, [0.067, 0.078, 0.027], [1.0, 0.96, 0.86], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
+    appendEyeEllipsoid(data, [-0.105, 0.12, 0.486], x, y, z, [0.067, 0.078, 0.027], [1.0, 0.96, 0.86], ...detail);
     appendEyeLidArc(data, 0, Math.PI, true);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false);
     const buffer = gl.createBuffer();
