@@ -1,8 +1,8 @@
 (() => {
   const artwork = Array.from({ length: 12 }, (_, i) => `artwork/${String(i + 1).padStart(2, "0")}.jpg`);
-  const skyAssets = artwork;
+  const compactDevice = window.matchMedia("(max-width: 1024px)").matches;
+  const skyAssets = compactDevice ? artwork.map(url => url.replace("artwork/", "artwork/pano/")) : artwork;
   const canvas = document.getElementById("sky");
-  const throneAngel = document.getElementById("throne-angel");
   const entry = document.getElementById("entry");
   const enterButton = document.getElementById("enter");
   const loading = document.getElementById("loading");
@@ -32,8 +32,12 @@
   let camera = [0, 0, 0];
   let radius = 14;
   let program;
+  let skyBuffer;
+  let skyPositionAttribute;
   let artworkTexture;
   let artworkMap;
+  let throneProgram;
+  let throneRings = [];
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -41,59 +45,6 @@
   let currentWork = 0;
   let pointerStart = null;
   let zoomFactor = 1;
-
-  function addEyeOrbit(group, ringRadius, count, eyeWidth, eyeHeight) {
-    const ns = "http://www.w3.org/2000/svg";
-    const circle = document.createElementNS(ns, "circle");
-    circle.setAttribute("cx", "200");
-    circle.setAttribute("cy", "200");
-    circle.setAttribute("r", String(ringRadius));
-    circle.setAttribute("class", "wheel-rim");
-    group.appendChild(circle);
-    for (let i = 0; i < count; i += 1) {
-      const angle = (i / count) * 360;
-      const eye = document.createElementNS(ns, "g");
-      eye.setAttribute("transform", `rotate(${angle} 200 200) translate(200 ${200 - ringRadius})`);
-      eye.setAttribute("class", "wheel-eye");
-      eye.innerHTML = `<path d="M ${-eyeWidth} 0 Q 0 ${-eyeHeight} ${eyeWidth} 0 Q 0 ${eyeHeight} ${-eyeWidth} 0Z"/><ellipse rx="${eyeWidth * 0.42}" ry="${eyeHeight * 0.58}" fill="#392a20"/><circle cx="${eyeWidth * 0.1}" cy="${-eyeHeight * 0.13}" r="${Math.max(1.2, eyeWidth * 0.16)}" fill="#fff8e8"/>`;
-      group.appendChild(eye);
-    }
-  }
-
-  addEyeOrbit(document.getElementById("wheel-a"), 166, 28, 5.2, 10.2);
-  addEyeOrbit(document.getElementById("wheel-b"), 122, 22, 6.2, 11.5);
-  addEyeOrbit(document.getElementById("wheel-c"), 78, 16, 7.2, 13);
-
-  function positionThroneAngel() {
-    if (!entry.classList.contains("leaving") || dialog.open) {
-      throneAngel.classList.remove("visible");
-      return;
-    }
-    const angle = time * 0.026 - Math.PI / 2;
-    const world = [Math.cos(angle) * 19.2, Math.sin(angle * 0.69) * 4.2, Math.sin(angle) * 19.2];
-    const delta = world.map((value, axis) => value - camera[axis]);
-    const dirs = basis();
-    const depth = delta[0] * dirs.forward[0] + delta[1] * dirs.forward[1] + delta[2] * dirs.forward[2];
-    if (depth <= 0.5) {
-      throneAngel.classList.remove("visible");
-      return;
-    }
-    const focal = window.innerHeight / (2 * Math.tan((Math.PI / 2.35) / 2));
-    const horizontal = delta[0] * dirs.right[0] + delta[1] * dirs.right[1] + delta[2] * dirs.right[2];
-    const vertical = delta[0] * dirs.up[0] + delta[1] * dirs.up[1] + delta[2] * dirs.up[2];
-    const x = window.innerWidth / 2 + (horizontal / depth) * focal;
-    const y = window.innerHeight / 2 - (vertical / depth) * focal;
-    // Oversize it relative to the painted sphere so the throne can loom past
-    // the viewport edges, like a colossal presence moving through the heavens.
-    const size = Math.max(Math.max(window.innerWidth, window.innerHeight) * 0.82,
-      Math.min(Math.max(window.innerWidth, window.innerHeight) * 2.35, (focal / depth) * 38));
-    throneAngel.style.left = `${x}px`;
-    throneAngel.style.top = `${y}px`;
-    throneAngel.style.width = `${size}px`;
-    throneAngel.style.height = `${size}px`;
-    throneAngel.style.opacity = String(Math.max(0.48, Math.min(0.94, 1 - depth / 96)));
-    throneAngel.classList.add("visible");
-  }
 
   const sources = [];
   let loaded = 0;
@@ -324,6 +275,241 @@
     return next;
   }
 
+  function createThroneProgram() {
+    const vertex = createShader(gl.VERTEX_SHADER, `
+      attribute vec3 a_position;
+      attribute vec3 a_normal;
+      attribute vec3 a_color;
+      uniform mat4 u_mvp;
+      uniform mat4 u_model;
+      varying vec3 v_normal;
+      varying vec3 v_world;
+      varying vec3 v_color;
+      void main() {
+        vec4 world = u_model * vec4(a_position, 1.0);
+        v_world = world.xyz;
+        v_normal = normalize(mat3(u_model) * a_normal);
+        v_color = a_color;
+        gl_Position = u_mvp * vec4(a_position, 1.0);
+      }
+    `);
+    const fragment = createShader(gl.FRAGMENT_SHADER, `
+      precision mediump float;
+      uniform vec3 u_camera;
+      uniform vec3 u_light;
+      varying vec3 v_normal;
+      varying vec3 v_world;
+      varying vec3 v_color;
+      void main() {
+        vec3 normal = normalize(v_normal);
+        vec3 viewDirection = normalize(u_camera - v_world);
+        vec3 lightDirection = normalize(u_light - v_world);
+        float diffuse = max(dot(normal, lightDirection), 0.0);
+        float specular = pow(max(dot(reflect(-lightDirection, normal), viewDirection), 0.0), 34.0);
+        float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
+        vec3 color = v_color * (0.43 + diffuse * 0.63);
+        color += vec3(1.0, 0.78, 0.42) * specular * 0.74;
+        color += vec3(0.42, 0.23, 0.08) * fresnel * 0.32;
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `);
+    const next = gl.createProgram();
+    gl.attachShader(next, vertex);
+    gl.attachShader(next, fragment);
+    gl.linkProgram(next);
+    if (!gl.getProgramParameter(next, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(next) || "Could not link throne geometry");
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    return next;
+  }
+
+  function appendMeshVertex(data, position, normal, color) {
+    data.push(position[0], position[1], position[2], normal[0], normal[1], normal[2], color[0], color[1], color[2]);
+  }
+
+  function appendTorus(data, radiusOnPlane, tubeRadius, color, segments, sides) {
+    function point(u, v) {
+      const a = (u / segments) * Math.PI * 2;
+      const b = (v / sides) * Math.PI * 2;
+      const normal = [Math.cos(b) * Math.cos(a), Math.cos(b) * Math.sin(a), Math.sin(b)];
+      const position = [(radiusOnPlane + tubeRadius * Math.cos(b)) * Math.cos(a), (radiusOnPlane + tubeRadius * Math.cos(b)) * Math.sin(a), tubeRadius * Math.sin(b)];
+      const engraved = 0.88 + 0.12 * (0.5 + 0.5 * Math.cos(a * 64.0));
+      return { position, normal, color: color.map(channel => channel * engraved) };
+    }
+    const triangle = (a, b, c) => {
+      appendMeshVertex(data, a.position, a.normal, a.color);
+      appendMeshVertex(data, b.position, b.normal, b.color);
+      appendMeshVertex(data, c.position, c.normal, c.color);
+    };
+    for (let u = 0; u < segments; u += 1) {
+      for (let v = 0; v < sides; v += 1) {
+        const a = point(u, v), b = point(u + 1, v), c = point(u + 1, v + 1), d = point(u, v + 1);
+        triangle(a, b, c);
+        triangle(a, c, d);
+      }
+    }
+  }
+
+  function appendEyeEllipsoid(data, center, tangent, up, inward, size, color, latitudes = 6, longitudes = 8) {
+    function vertex(latitude, longitude) {
+      const phi = (latitude / latitudes) * Math.PI;
+      const theta = (longitude / longitudes) * Math.PI * 2;
+      const unit = [Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta)];
+      const position = [0, 1, 2].map(axis => center[axis]
+        + tangent[axis] * unit[0] * size[0]
+        + up[axis] * unit[1] * size[1]
+        + inward[axis] * unit[2] * size[2]);
+      const normalRaw = [0, 1, 2].map(axis => tangent[axis] * unit[0] / size[0]
+        + up[axis] * unit[1] / size[1]
+        + inward[axis] * unit[2] / size[2]);
+      const length = Math.hypot(...normalRaw) || 1;
+      return { position, normal: normalRaw.map(value => value / length) };
+    }
+    const triangle = (a, b, c) => {
+      appendMeshVertex(data, a.position, a.normal, color);
+      appendMeshVertex(data, b.position, b.normal, color);
+      appendMeshVertex(data, c.position, c.normal, color);
+    };
+    for (let lat = 0; lat < latitudes; lat += 1) {
+      for (let lon = 0; lon < longitudes; lon += 1) {
+        const a = vertex(lat, lon), b = vertex(lat + 1, lon), c = vertex(lat + 1, lon + 1), d = vertex(lat, lon + 1);
+        triangle(a, b, c);
+        triangle(a, c, d);
+      }
+    }
+  }
+
+  function makeThroneRing(radiusOnPlane, eyeCount, compact) {
+    const data = [];
+    const segments = compact ? 64 : 96;
+    const sides = compact ? 10 : 14;
+    appendTorus(data, radiusOnPlane, 0.31, [0.45, 0.255, 0.09], segments, sides);
+    appendTorus(data, radiusOnPlane - 0.25, 0.055, [0.78, 0.55, 0.25], segments, Math.max(8, sides - 2));
+    appendTorus(data, radiusOnPlane + 0.25, 0.055, [0.24, 0.14, 0.055], segments, Math.max(8, sides - 2));
+    const eyeWidth = radiusOnPlane > 11 ? 0.72 : radiusOnPlane > 9 ? 0.64 : 0.56;
+    for (let index = 0; index < eyeCount; index += 1) {
+      const angle = (index / eyeCount) * Math.PI * 2;
+      const radial = [Math.cos(angle), Math.sin(angle), 0];
+      const tangent = [-Math.sin(angle), Math.cos(angle), 0];
+      const up = [0, 0, 1];
+      const inward = [-Math.cos(angle), -Math.sin(angle), 0];
+      const center = radial.map(value => value * (radiusOnPlane - 0.36));
+      appendEyeEllipsoid(data, center, tangent, up, inward, [eyeWidth, eyeWidth * 0.72, 0.23], [0.76, 0.64, 0.46]);
+      const irisCenter = center.map((value, axis) => value + inward[axis] * 0.15);
+      appendEyeEllipsoid(data, irisCenter, tangent, up, inward, [eyeWidth * 0.42, eyeWidth * 0.43, 0.085], [0.53, 0.27, 0.075]);
+      const pupilCenter = center.map((value, axis) => value + inward[axis] * 0.205);
+      appendEyeEllipsoid(data, pupilCenter, tangent, up, inward, [eyeWidth * 0.17, 0.14, 0.043], [0.025, 0.018, 0.014]);
+      const glintCenter = center.map((value, axis) => value + tangent[axis] * eyeWidth * 0.12 + up[axis] * 0.09 + inward[axis] * 0.245);
+      appendEyeEllipsoid(data, glintCenter, tangent, up, inward, [0.035, 0.045, 0.018], [1.0, 0.91, 0.72]);
+    }
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9 };
+  }
+
+  function matrixMultiply(a, b) {
+    const out = new Float32Array(16);
+    for (let column = 0; column < 4; column += 1) {
+      for (let row = 0; row < 4; row += 1) {
+        out[column * 4 + row] = a[row] * b[column * 4]
+          + a[4 + row] * b[column * 4 + 1]
+          + a[8 + row] * b[column * 4 + 2]
+          + a[12 + row] * b[column * 4 + 3];
+      }
+    }
+    return out;
+  }
+
+  function rotationMatrix(x, y, z) {
+    const cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y), cz = Math.cos(z), sz = Math.sin(z);
+    const rx = new Float32Array([1, 0, 0, 0, 0, cx, sx, 0, 0, -sx, cx, 0, 0, 0, 0, 1]);
+    const ry = new Float32Array([cy, 0, -sy, 0, 0, 1, 0, 0, sy, 0, cy, 0, 0, 0, 0, 1]);
+    const rz = new Float32Array([cz, sz, 0, 0, -sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    return matrixMultiply(matrixMultiply(rx, ry), rz);
+  }
+
+  function throneFrame(position, tangent, up, inward) {
+    return new Float32Array([
+      tangent[0], tangent[1], tangent[2], 0,
+      up[0], up[1], up[2], 0,
+      inward[0], inward[1], inward[2], 0,
+      position[0], position[1], position[2], 1
+    ]);
+  }
+
+  function throneViewMatrix(dirs) {
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    return new Float32Array([
+      dirs.right[0], dirs.up[0], -dirs.forward[0], 0,
+      dirs.right[1], dirs.up[1], -dirs.forward[1], 0,
+      dirs.right[2], dirs.up[2], -dirs.forward[2], 0,
+      -dot(dirs.right, camera), -dot(dirs.up, camera), dot(dirs.forward, camera), 1
+    ]);
+  }
+
+  function throneProjectionMatrix() {
+    const near = 0.1, far = 200;
+    const f = 1 / Math.tan((Math.PI / 2.35) / 2);
+    const aspect = canvas.width / canvas.height;
+    return new Float32Array([
+      f / aspect, 0, 0, 0,
+      0, f, 0, 0,
+      0, 0, (far + near) / (near - far), -1,
+      0, 0, (2 * far * near) / (near - far), 0
+    ]);
+  }
+
+  function drawThrone() {
+    if (!entry.classList.contains("leaving") || dialog.open || !throneProgram) return;
+    const orbit = time * 0.026 - Math.PI / 2;
+    const orbitRadius = 19.4;
+    const bob = Math.sin(orbit * 0.54) * 2.6;
+    const position = [Math.cos(orbit) * orbitRadius, bob, Math.sin(orbit) * orbitRadius];
+    const inward = position.map(value => -value / Math.hypot(...position));
+    const tangentRaw = [-Math.sin(orbit), Math.cos(orbit * 0.54) * 2.6 * 0.54 / orbitRadius, Math.cos(orbit)];
+    const tangentLength = Math.hypot(...tangentRaw);
+    const tangent = tangentRaw.map(value => value / tangentLength);
+    const upRaw = [inward[1] * tangent[2] - inward[2] * tangent[1], inward[2] * tangent[0] - inward[0] * tangent[2], inward[0] * tangent[1] - inward[1] * tangent[0]];
+    const upLength = Math.hypot(...upRaw);
+    const up = upRaw.map(value => value / upLength);
+    const dirs = basis();
+    const depth = (position[0] - camera[0]) * dirs.forward[0] + (position[1] - camera[1]) * dirs.forward[1] + (position[2] - camera[2]) * dirs.forward[2];
+    if (depth <= 0.3) return;
+    const frame = throneFrame(position, tangent, up, inward);
+    const view = throneViewMatrix(dirs);
+    const projection = throneProjectionMatrix();
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);
+    gl.useProgram(throneProgram);
+    gl.uniform3f(gl.getUniformLocation(throneProgram, "u_camera"), camera[0], camera[1], camera[2]);
+    gl.uniform3f(gl.getUniformLocation(throneProgram, "u_light"), 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
+    const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
+    const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
+    const normalAttribute = gl.getAttribLocation(throneProgram, "a_normal");
+    const colorAttribute = gl.getAttribLocation(throneProgram, "a_color");
+    gl.enableVertexAttribArray(positionAttribute);
+    gl.enableVertexAttribArray(normalAttribute);
+    gl.enableVertexAttribArray(colorAttribute);
+    throneRings.forEach((ring, index) => {
+      const speed = [0.095, -0.073, 0.061][index];
+      const tilt = [[0.24, 0.10], [1.22, 0.48], [0.52, 1.18]][index];
+      const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
+      const model = matrixMultiply(frame, localRotation);
+      const mvp = matrixMultiply(projection, matrixMultiply(view, model));
+      gl.bindBuffer(gl.ARRAY_BUFFER, ring.buffer);
+      gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
+      gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
+      gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_model"), false, model);
+      gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_mvp"), false, mvp);
+      gl.drawArrays(gl.TRIANGLES, 0, ring.count);
+    });
+    gl.disable(gl.DEPTH_TEST);
+  }
+
   function contain(ctx, image, x, y, width, height) {
     const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
     const drawWidth = image.naturalWidth * scale;
@@ -373,7 +559,7 @@
 
   function makeArtworkAtlas(images) {
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    const width = Math.min(8192, maxTextureSize);
+    const width = Math.min(compactDevice ? 4096 : 8192, maxTextureSize);
     const map = document.createElement("canvas");
     map.width = width;
     map.height = width / 2;
@@ -392,52 +578,22 @@
     return map;
   }
 
-  function loadHighResolutionImage(url) {
-    return new Promise(resolve => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => resolve(null);
-      image.src = url;
-    });
-  }
-
-  async function sharpenSphereArtwork(map) {
-    const context = map.getContext("2d", { alpha: false });
-    const tileWidth = map.width / 4;
-    const tileHeight = map.height / 3;
-    for (let index = 0; index < artwork.length; index += 1) {
-      const image = await loadHighResolutionImage(artwork[index]);
-      if (image) {
-        const x = (index % 4) * tileWidth;
-        const y = Math.floor(index / 4) * tileHeight;
-        context.clearRect(x, y, tileWidth, tileHeight);
-        if (index === 0) drawLandscape(context, image, contain, x, y, tileWidth, tileHeight);
-        else contain(context, image, x, y, tileWidth, tileHeight);
-        image.onload = null;
-        image.onerror = null;
-        image.removeAttribute("src");
-      }
-    }
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, map);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.activeTexture(gl.TEXTURE0);
-  }
-
   function buildWorld(images) {
     if (opened) return;
     opened = true;
     try {
       program = createProgram();
       gl.useProgram(program);
-      const buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      throneProgram = createThroneProgram();
+      throneRings = compactDevice
+        ? [makeThroneRing(13.0, 24, true), makeThroneRing(10.5, 20, true), makeThroneRing(8.0, 16, true)]
+        : [makeThroneRing(13.0, 32, false), makeThroneRing(10.5, 26, false), makeThroneRing(8.0, 20, false)];
+      skyBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-      const positionAttribute = gl.getAttribLocation(program, "a_position");
-      gl.enableVertexAttribArray(positionAttribute);
-      gl.vertexAttribPointer(positionAttribute, 2, gl.FLOAT, false, 0, 0);
+      skyPositionAttribute = gl.getAttribLocation(program, "a_position");
+      gl.enableVertexAttribArray(skyPositionAttribute);
+      gl.vertexAttribPointer(skyPositionAttribute, 2, gl.FLOAT, false, 0, 0);
       artworkMap = makeArtworkAtlas(images);
       artworkTexture = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0);
@@ -449,6 +605,19 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.generateMipmap(gl.TEXTURE_2D);
+      // The GPU now owns the atlas texture. Release its large CPU canvas and
+      // the source image decodes so phones keep their memory for the viewer.
+      artworkMap.width = 1;
+      artworkMap.height = 1;
+      artworkMap = null;
+      images.forEach((image, index) => {
+        if (image) {
+          image.onload = null;
+          image.onerror = null;
+          image.removeAttribute("src");
+        }
+        images[index] = null;
+      });
       gl.uniform1i(gl.getUniformLocation(program, "u_artwork"), 0);
       gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
       gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
@@ -470,7 +639,7 @@
   }
 
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
+    const dpr = Math.min(window.devicePixelRatio || 1, compactDevice ? 1.25 : 1.6);
     const width = Math.max(1, Math.round(window.innerWidth * dpr));
     const height = Math.max(1, Math.round(window.innerHeight * dpr));
     if (canvas.width !== width || canvas.height !== height) {
@@ -526,8 +695,10 @@
     lastFrame = now;
     time += delta;
     moveCamera(delta);
-    positionThroneAngel();
     gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
+    gl.enableVertexAttribArray(skyPositionAttribute);
+    gl.vertexAttribPointer(skyPositionAttribute, 2, gl.FLOAT, false, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
     gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
@@ -535,12 +706,12 @@
     gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
     gl.uniform1f(gl.getUniformLocation(program, "u_time"), time);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    drawThrone();
     requestAnimationFrame(render);
   }
 
   enterButton.addEventListener("click", () => {
     entry.classList.add("leaving");
-    document.body.classList.add("entered");
     hint.hidden = false;
     controls.hidden = false;
     document.getElementById("position").hidden = false;

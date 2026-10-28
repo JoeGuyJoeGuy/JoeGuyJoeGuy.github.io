@@ -14,21 +14,6 @@ button { cursor: pointer; }
 button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline-offset: 4px; }
 #sky { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #sky.dragging { cursor: grabbing; }
-.throne-angel { position: fixed; z-index: 1; left: 50%; top: 50%; width: 220px; height: 220px; transform: translate(-50%, -50%); opacity: 0; visibility: hidden; pointer-events: none; filter: drop-shadow(0 0 20px rgb(230 190 121 / .28)); transition: opacity 1.5s ease, visibility 1.5s; }
-.throne-angel.visible { visibility: visible; }
-.throne-svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.wheel-rim { fill: none; stroke: url(#wheel-bronze); stroke-width: 2.4; opacity: .9; }
-.wheel-eye path { fill: url(#eye-ivory); stroke: #f3d8a0; stroke-width: 1.1; }
-.wheel-eye ellipse { stroke: #f2dcae; stroke-width: .7; }
-.wheel-eye circle { opacity: .9; }
-.throne-wheel { transform-box: fill-box; transform-origin: center; filter: url(#angel-glow); }
-.wheel-a { animation: wheel-turn-a 118s linear infinite; }
-.wheel-b { animation: wheel-turn-b 86s linear infinite; }
-.wheel-c { animation: wheel-turn-a 64s linear infinite; }
-.throne-wheel.wheel-b { transform: rotate(54deg) scaleX(.68); }
-.throne-wheel.wheel-c { transform: rotate(-53deg) scaleY(.7); }
-@keyframes wheel-turn-a { to { rotate: 360deg; } }
-@keyframes wheel-turn-b { to { rotate: -360deg; } }
 .loading { position: fixed; z-index: 8; left: 50%; top: 50%; transform: translate(-50%,-50%); display: flex; gap: 12px; align-items: center; color: #e9dcc8; font: 9px var(--mono); letter-spacing: .16em; transition: opacity .5s; }
 .loading.done { opacity: 0; pointer-events: none; }
 .loading-mark { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 18px var(--amber); animation: pulse 1s ease-in-out infinite alternate; }
