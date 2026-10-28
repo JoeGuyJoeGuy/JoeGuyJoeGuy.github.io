@@ -148,7 +148,7 @@
             vec3 panelOffset = panelHit - panelPosition;
             vec2 panelPoint = vec2(dot(panelOffset, tangentRight), dot(panelOffset, tangentUp)) / u_radius;
         // Generous overlap between undistorted artwork panels hides the dark shell.
-        float panelHalfWidth = 0.80;
+        float panelHalfWidth = 0.63;
             float panelHalfHeight = panelHalfWidth * (2.0 / 3.0);
             vec2 panelUV = panelPoint / vec2(panelHalfWidth, panelHalfHeight) * 0.5 + 0.5;
             bool insidePanel = panelUV.x >= 0.0 && panelUV.x <= 1.0 && panelUV.y >= 0.0 && panelUV.y <= 1.0;
@@ -175,9 +175,10 @@
             }
           }
         }
-        float coverage = min(panelOpacity + secondOpacity, 1.0);
-        vec3 joinedPaint = (panelColor * panelOpacity + secondColor * secondOpacity) / max(panelOpacity + secondOpacity, 0.001);
-        color = mix(color, joinedPaint, coverage);
+        if (nearestPanel < 1.0e5) {
+          if (secondPanel < 1.0e5) color = mix(secondColor, panelColor, panelOpacity);
+          else color = mix(color, panelColor, panelOpacity);
+        }
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
         // gives the painted world a gentle change in light as the viewer travels.
@@ -443,7 +444,7 @@
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
     const rect = canvas.getBoundingClientRect();
-    const panelHalfWidth = 0.80;
+    const panelHalfWidth = 0.63;
     const panelHalfHeight = panelHalfWidth * (2 / 3);
     const podY = 1.12;
     const localCamera = [camera[0], camera[1] / podY, camera[2]];
