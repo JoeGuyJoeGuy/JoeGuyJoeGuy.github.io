@@ -386,7 +386,8 @@
     const polePosition = (localHit[1] / podY) / normalLength;
     const v = 0.5 + Math.max(-1, Math.min(1, polePosition)) * 0.5;
     const column = Math.min(3, Math.floor(u * 4));
-    const row = Math.min(2, Math.floor(v * 3));
+    // The sphere shader's flipped WebGL texture has its top painting row at v=1.
+    const row = Math.min(2, Math.floor((1 - v) * 3));
     return row * 4 + column;
   }
 
