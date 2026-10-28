@@ -93,6 +93,11 @@
       uniform float u_time;
       const float PI = 3.14159265358979323846264;
       const float POD_Y = 1.12;
+      vec3 rotateAroundAxis(vec3 value, vec3 axis, float angle) {
+        float c = cos(angle);
+        float s = sin(angle);
+        return value * c + cross(axis, value) * s + axis * dot(axis, value) * (1.0 - c);
+      }
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
         float scale = tan(u_fov * 0.5);
@@ -105,19 +110,18 @@
         // Equal-area vertical mapping gives the pole paintings more room.
         vec3 localCamera = vec3(u_camera.x, u_camera.y / POD_Y, u_camera.z);
         vec3 localRay = vec3(ray.x, ray.y / POD_Y, ray.z);
+        float a = dot(localRay, localRay);
         float b = dot(localCamera, localRay);
         float c = dot(localCamera, localCamera) - u_radius * u_radius;
-        float discriminant = max(0.0, b * b - c);
-        float distanceToShell = -b + sqrt(discriminant);
+        float discriminant = max(0.0, b * b - a * c);
+        float distanceToShell = (-b + sqrt(discriminant)) / a;
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
-        float longitude = atan(normal.z, normal.x);
-        float poleDistance = abs(normal.y);
-        float drift = 0.28 * (0.5 - 0.5 * cos(u_time * 0.06));
-        float sourcePoleDistance = poleDistance + drift * poleDistance * (1.0 - poleDistance);
-        float sourceV = 0.5 + sign(normal.y) * sourcePoleDistance * 0.5;
-        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, sourceV);
+        vec3 driftAxis = normalize(vec3(0.82, 0.0, -0.57));
+        vec3 paintedDirection = rotateAroundAxis(normal, driftAxis, u_time * 0.035);
+        float longitude = atan(paintedDirection.z, paintedDirection.x);
+        vec2 sphereUV = vec2(longitude / (2.0 * PI) + 0.5, 0.5 + paintedDirection.y * 0.5);
         vec3 color = texture2D(u_sphere, sphereUV).rgb;
 
         // A low, warm ambient fill keeps dark passages legible; the slow moving key
@@ -374,25 +378,36 @@
     return ray.map(value => value / rayLength);
   }
 
+  function rotateAroundAxis(value, axis, angle) {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const cross = [
+      axis[1] * value[2] - axis[2] * value[1],
+      axis[2] * value[0] - axis[0] * value[2],
+      axis[0] * value[1] - axis[1] * value[0]
+    ];
+    const dot = axis[0] * value[0] + axis[1] * value[1] + axis[2] * value[2];
+    return value.map((component, index) => component * c + cross[index] * s + axis[index] * dot * (1 - c));
+  }
+
   function artworkAt(x, y) {
     const ray = rayForScreen(x, y);
     const podY = 1.12;
     const localCamera = [camera[0], camera[1] / podY, camera[2]];
     const localRay = [ray[0], ray[1] / podY, ray[2]];
+    const a = localRay[0] ** 2 + localRay[1] ** 2 + localRay[2] ** 2;
     const b = localCamera[0] * localRay[0] + localCamera[1] * localRay[1] + localCamera[2] * localRay[2];
     const c = localCamera[0] ** 2 + localCamera[1] ** 2 + localCamera[2] ** 2 - radius ** 2;
-    const distance = -b + Math.sqrt(Math.max(0, b * b - c));
+    const distance = (-b + Math.sqrt(Math.max(0, b * b - a * c))) / a;
     const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
-    const hit = [localHit[0], localHit[1] * podY, localHit[2]];
-    const longitude = Math.atan2(hit[2], hit[0]);
-    const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
     const normalLength = Math.hypot(localHit[0], localHit[2], localHit[1] / podY);
-    const polePosition = (localHit[1] / podY) / normalLength;
-    const normalizedPole = Math.max(-1, Math.min(1, polePosition));
-    const poleDistance = Math.abs(normalizedPole);
-    const drift = 0.28 * (0.5 - 0.5 * Math.cos(time * 0.06));
-    const sourcePoleDistance = poleDistance + drift * poleDistance * (1 - poleDistance);
-    const v = 0.5 + Math.sign(normalizedPole) * sourcePoleDistance * 0.5;
+    const surfaceNormal = [localHit[0] / normalLength, (localHit[1] / podY) / normalLength, localHit[2] / normalLength];
+    const driftAxisLength = Math.hypot(0.82, 0.57);
+    const driftAxis = [0.82 / driftAxisLength, 0, -0.57 / driftAxisLength];
+    const paintedDirection = rotateAroundAxis(surfaceNormal, driftAxis, time * 0.035);
+    const longitude = Math.atan2(paintedDirection[2], paintedDirection[0]);
+    const u = (longitude / (Math.PI * 2) + 0.5 + 1) % 1;
+    const v = 0.5 + paintedDirection[1] * 0.5;
     const column = Math.min(3, Math.floor(u * 4));
     const row = Math.min(2, Math.floor(v * 3));
     return row * 4 + column;
