@@ -258,11 +258,11 @@
             vec3 blendedPanels = mix(secondColor, panelColor, panelMix);
             // A little light from the painted nebula passes through the panels,
             // giving the artwork-coated sphere a translucent, layered quality.
-            float coverage = max(0.94, min(combinedOpacity, 1.0)) * 0.74;
-            color = mix(color, blendedPanels, coverage);
+            float coverage = max(0.97, min(combinedOpacity, 1.0));
+            color = blendedPanels;
             panelCoverage = coverage;
           } else {
-            panelCoverage = panelOpacity * 0.74;
+            panelCoverage = panelOpacity;
             color = panelColor;
           }
         }
