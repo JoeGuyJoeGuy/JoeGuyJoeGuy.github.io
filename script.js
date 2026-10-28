@@ -151,6 +151,14 @@
     ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
   }
 
+  function drawLandscape(ctx, image, draw, x, y, width, height) {
+    ctx.save();
+    ctx.translate(x + width / 2, y + height / 2);
+    ctx.rotate(Math.PI / 2);
+    draw(ctx, image, -height / 2, -width / 2, height, width);
+    ctx.restore();
+  }
+
   function makeSphereTexture(images) {
     const width = 4096;
     const height = 2048;
@@ -171,7 +179,8 @@
       const y = Math.floor(index / 4) * tileHeight;
       baseContext.save();
       baseContext.filter = "blur(34px) saturate(1.08) brightness(.94)";
-      cover(baseContext, image, x - 36, y - 36, tileWidth + 72, tileHeight + 72);
+      if (index === 0) drawLandscape(baseContext, image, cover, x - 36, y - 36, tileWidth + 72, tileHeight + 72);
+      else cover(baseContext, image, x - 36, y - 36, tileWidth + 72, tileHeight + 72);
       baseContext.restore();
     });
 
@@ -196,10 +205,12 @@
       panel.height = Math.ceil(tileHeight);
       const p = panel.getContext("2d");
       p.filter = "blur(28px) brightness(.88) saturate(1.08)";
-      cover(p, image, -18, -14, tileWidth + 36, tileHeight + 28);
+      if (index === 0) drawLandscape(p, image, cover, -18, -14, tileWidth + 36, tileHeight + 28);
+      else cover(p, image, -18, -14, tileWidth + 36, tileHeight + 28);
       p.filter = "none";
       const pad = 8;
-      contain(p, image, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
+      if (index === 0) drawLandscape(p, image, contain, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
+      else contain(p, image, pad, pad, tileWidth - pad * 2, tileHeight - pad * 2);
       p.globalCompositeOperation = "destination-in";
       const horizontal = p.createLinearGradient(0, 0, tileWidth, 0);
       horizontal.addColorStop(0, "rgba(255,255,255,0)");
