@@ -324,7 +324,7 @@
         float diffuse = max(dot(normal, lightDirection), 0.0);
         float specular = pow(max(dot(reflect(-lightDirection, normal), viewDirection), 0.0), 34.0);
         float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
-        vec3 color = v_color * (0.43 + diffuse * 0.63);
+        vec3 color = v_color * (0.52 + diffuse * 0.68);
         color += vec3(1.0, 0.78, 0.42) * specular * 0.74;
         color += vec3(0.42, 0.23, 0.08) * fresnel * 0.32;
         gl_FragColor = vec4(color, 1.0);
@@ -351,6 +351,32 @@
       const normal = [Math.cos(b) * Math.cos(a), Math.cos(b) * Math.sin(a), Math.sin(b)];
       const position = [(radiusOnPlane + tubeRadius * Math.cos(b)) * Math.cos(a), (radiusOnPlane + tubeRadius * Math.cos(b)) * Math.sin(a), tubeRadius * Math.sin(b)];
       const engraved = 0.88 + 0.12 * (0.5 + 0.5 * Math.cos(a * 64.0));
+      return { position, normal, color: color.map(channel => channel * engraved) };
+    }
+    const triangle = (a, b, c) => {
+      appendMeshVertex(data, a.position, a.normal, a.color);
+      appendMeshVertex(data, b.position, b.normal, b.color);
+      appendMeshVertex(data, c.position, c.normal, c.color);
+    };
+    for (let u = 0; u < segments; u += 1) {
+      for (let v = 0; v < sides; v += 1) {
+        const a = point(u, v), b = point(u + 1, v), c = point(u + 1, v + 1), d = point(u, v + 1);
+        triangle(a, b, c);
+        triangle(a, c, d);
+      }
+    }
+  }
+
+  function appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, color, segments, sides) {
+    function point(u, v) {
+      const a = (u / segments) * Math.PI * 2;
+      const b = (v / sides) * Math.PI * 2;
+      const radial = Math.cos(b);
+      const normalRaw = [halfThickness * radial * Math.cos(a), halfThickness * radial * Math.sin(a), halfWidth * Math.sin(b)];
+      const normalLength = Math.hypot(...normalRaw) || 1;
+      const normal = normalRaw.map(value => value / normalLength);
+      const position = [(radiusOnPlane + halfWidth * radial) * Math.cos(a), (radiusOnPlane + halfWidth * radial) * Math.sin(a), halfThickness * Math.sin(b)];
+      const engraved = 0.82 + 0.12 * (0.5 + 0.5 * Math.cos(a * 72.0)) + 0.06 * (0.5 + 0.5 * Math.cos(a * 18.0));
       return { position, normal, color: color.map(channel => channel * engraved) };
     }
     const triangle = (a, b, c) => {
@@ -398,26 +424,31 @@
 
   function makeThroneRing(radiusOnPlane, eyeCount, compact) {
     const data = [];
-    const segments = compact ? 80 : 128;
-    const sides = compact ? 12 : 18;
-    appendTorus(data, radiusOnPlane, 0.31, [0.42, 0.235, 0.075], segments, sides);
-    appendTorus(data, radiusOnPlane - 0.25, 0.055, [0.78, 0.55, 0.25], segments, Math.max(8, sides - 2));
-    appendTorus(data, radiusOnPlane + 0.25, 0.055, [0.24, 0.14, 0.055], segments, Math.max(8, sides - 2));
+    const segments = compact ? 120 : 192;
+    const sides = compact ? 14 : 22;
+    const halfWidth = compact ? 1.45 : 1.7;
+    const halfThickness = compact ? 0.82 : 1.05;
+    // Broad, flattened metal bands with layered inner and outer rails.
+    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.50, 0.30, 0.12], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.78, 0.11, [0.92, 0.68, 0.32], segments, sides);
+    appendTorus(data, radiusOnPlane + halfWidth * 0.78, 0.09, [0.24, 0.14, 0.055], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.48, 0.035, [0.92, 0.70, 0.34], segments, Math.max(10, sides - 4));
+    appendTorus(data, radiusOnPlane + halfWidth * 0.48, 0.035, [0.60, 0.36, 0.13], segments, Math.max(10, sides - 4));
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-    return { buffer, count: data.length / 9, radius: radiusOnPlane, eyeCount };
+    return { buffer, count: data.length / 9, radius: radiusOnPlane, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth * 0.86 };
   }
 
   function makeThroneEye(compact) {
     const data = [];
     const detail = compact ? [8, 12] : [12, 20];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.025], x, y, z, [0.58, 0.43, 0.20], [0.22, 0.12, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.49, 0.35, 0.17], [0.88, 0.82, 0.70], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.148], x, y, z, [0.225, 0.24, 0.055], [0.40, 0.19, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.192], x, y, z, [0.105, 0.16, 0.034], [0.018, 0.012, 0.009], ...detail);
-    appendEyeEllipsoid(data, [-0.075, 0.10, 0.22], x, y, z, [0.042, 0.052, 0.018], [1.0, 0.94, 0.80], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.04], x, y, z, [0.92, 0.68, 0.32], [0.22, 0.12, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.78, 0.56, 0.27], [0.88, 0.82, 0.70], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.23], x, y, z, [0.36, 0.39, 0.09], [0.40, 0.19, 0.045], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.30], x, y, z, [0.17, 0.26, 0.055], [0.018, 0.012, 0.009], ...detail);
+    appendEyeEllipsoid(data, [-0.12, 0.16, 0.34], x, y, z, [0.068, 0.084, 0.03], [1.0, 0.94, 0.80], ...detail);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -490,22 +521,7 @@
 
   function drawThrone() {
     if (!entry.classList.contains("leaving") || dialog.open || !throneProgram) return;
-    const orbit = time * 0.026 - Math.PI / 2;
-    const orbitRadius = 35;
-    const objectScale = 1.85;
-    const bob = Math.sin(orbit * 0.54) * 4.2;
-    const position = [Math.cos(orbit) * orbitRadius, bob, Math.sin(orbit) * orbitRadius];
-    const inward = position.map(value => -value / Math.hypot(...position));
-    const tangentRaw = [-Math.sin(orbit), Math.cos(orbit * 0.54) * 4.2 * 0.54 / orbitRadius, Math.cos(orbit)];
-    const tangentLength = Math.hypot(...tangentRaw);
-    const tangent = tangentRaw.map(value => value / tangentLength);
-    const upRaw = [inward[1] * tangent[2] - inward[2] * tangent[1], inward[2] * tangent[0] - inward[0] * tangent[2], inward[0] * tangent[1] - inward[1] * tangent[0]];
-    const upLength = Math.hypot(...upRaw);
-    const up = upRaw.map(value => value / upLength);
     const dirs = basis();
-    const depth = (position[0] - camera[0]) * dirs.forward[0] + (position[1] - camera[1]) * dirs.forward[1] + (position[2] - camera[2]) * dirs.forward[2];
-    if (depth <= 0.3) return;
-    const frame = throneFrame(position, tangent, up, inward);
     const view = throneViewMatrix(dirs);
     const projection = throneProjectionMatrix();
     gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -515,6 +531,7 @@
     gl.useProgram(throneProgram);
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_light"), 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
+    const assemblyRotation = rotationMatrix(0.10, time * 0.022, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
     const normalAttribute = gl.getAttribLocation(throneProgram, "a_normal");
@@ -536,13 +553,14 @@
       const speed = [0.095, -0.073, 0.061][index];
       const tilt = [[0.24, 0.10], [1.22, 0.48], [0.52, 1.18]][index];
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
-      const model = matrixMultiply(frame, matrixMultiply(localRotation, scaleMatrix(objectScale)));
+      const ringRotation = matrixMultiply(assemblyRotation, localRotation);
+      const model = matrixMultiply(ringRotation, scaleMatrix(1));
       drawMesh(ring, model);
       const worldUp = [0, 1, 0];
       for (let eyeIndex = 0; eyeIndex < ring.eyeCount; eyeIndex += 1) {
         const angle = (eyeIndex / ring.eyeCount) * Math.PI * 2;
-        const eyeRadius = (ring.radius - 0.43) * objectScale;
-        const eyeCenter = transformPoint(matrixMultiply(frame, localRotation), [Math.cos(angle) * eyeRadius, Math.sin(angle) * eyeRadius, 0]);
+        const eyeRadius = ring.innerEyeRadius;
+        const eyeCenter = transformPoint(ringRotation, [Math.cos(angle) * eyeRadius, Math.sin(angle) * eyeRadius, 0]);
         const towardCamera = camera.map((value, axis) => value - eyeCenter[axis]);
         const eyeLength = Math.hypot(...towardCamera) || 1;
         const eyeNormal = towardCamera.map(value => value / eyeLength);
@@ -552,7 +570,7 @@
         eyeRight = eyeRight.map(value => value / rightLength);
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
         const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
-        drawMesh(throneEye, matrixMultiply(eyeFrame, scaleMatrix(objectScale)));
+        drawMesh(throneEye, eyeFrame);
       }
     });
     gl.disable(gl.DEPTH_TEST);
@@ -634,8 +652,8 @@
       gl.useProgram(program);
       throneProgram = createThroneProgram();
       throneRings = compactDevice
-        ? [makeThroneRing(13.0, 24, true), makeThroneRing(10.5, 20, true), makeThroneRing(8.0, 16, true)]
-        : [makeThroneRing(13.0, 32, false), makeThroneRing(10.5, 26, false), makeThroneRing(8.0, 20, false)];
+        ? [makeThroneRing(19.5, 24, true), makeThroneRing(24.5, 20, true), makeThroneRing(29.5, 16, true)]
+        : [makeThroneRing(19.5, 36, false), makeThroneRing(24.5, 30, false), makeThroneRing(29.5, 24, false)];
       throneEye = makeThroneEye(compactDevice);
       skyBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
@@ -760,7 +778,6 @@
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    drawThrone();
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
     gl.enableVertexAttribArray(skyPositionAttribute);
@@ -770,6 +787,9 @@
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disable(gl.BLEND);
+    // Keep the orbiting belts visible across the painted shell, like a close
+    // celestial mechanism wrapping the artwork rather than disappearing behind it.
+    drawThrone();
     requestAnimationFrame(render);
   }
 
