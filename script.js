@@ -165,15 +165,16 @@
         float nebula = broadCloud * 0.4 + fineCloud * 0.2 + smoothstep(0.56, 0.9, filament) * 0.09 + polarHaze * 0.36;
         vec3 pigment = mix(pigmentA, pigmentB, fineCloud * 0.7);
         pigment = mix(pigment, pigmentC, broadCloud * 0.46);
-        vec3 color = vec3(0.024, 0.027, 0.052) + pigment * nebula * vec3(0.56, 0.48, 0.42);
-        color += vec3(0.018, 0.014, 0.04) * polarHaze;
-        vec3 starCell = floor(spaceDirection * 190.0);
-        vec3 starLocal = fract(spaceDirection * 190.0) - vec3(0.5);
+        vec3 color = vec3(0.034, 0.036, 0.064) + pigment * nebula * vec3(0.56, 0.48, 0.42);
+        color += vec3(0.022, 0.016, 0.048) * nebula;
+        color += vec3(0.024, 0.018, 0.052) * polarHaze;
+        vec3 starCell = floor(spaceDirection * 140.0);
+        vec3 starLocal = fract(spaceDirection * 140.0) - vec3(0.5);
         vec3 starOffset = vec3(hash31(starCell + vec3(1.0, 0.0, 0.0)),
                                hash31(starCell + vec3(0.0, 1.0, 0.0)),
                                hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
-        float star = (1.0 - smoothstep(0.018, 0.045, length(starLocal - starOffset))) * step(0.99, hash31(starCell));
-        color += vec3(0.82, 0.63, 0.43) * star * 0.36;
+        float star = (1.0 - smoothstep(0.07, 0.2, length(starLocal - starOffset))) * step(0.988, hash31(starCell));
+        color += vec3(0.86, 0.67, 0.48) * star * 0.4;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
