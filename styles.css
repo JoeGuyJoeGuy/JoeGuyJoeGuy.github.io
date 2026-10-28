@@ -67,13 +67,16 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .viewer-actions { display: flex; align-items: center; gap: clamp(12px, 2vw, 32px); }
 .viewer-actions button { border: 0; padding: 8px 0; background: none; color: var(--ink); font: inherit; letter-spacing: inherit; }
 .viewer-actions button:hover { color: var(--amber); }
-.viewer-actions .mode-button { min-width: 54px; padding: 9px; border: 1px solid #44413b; color: var(--amber); }
+.viewer-zoom { display: flex; align-items: center; gap: 10px; padding: 0 11px; border: 1px solid #44413b; color: var(--amber); }
+.viewer-zoom button { min-width: 18px; font-size: 15px; }
+.viewer-zoom span { min-width: 36px; color: var(--ink); text-align: center; }
+.viewer-zoom .fit-button { min-width: 36px; padding: 8px 0; border-left: 1px solid #44413b; color: var(--amber); }
 .viewer-actions .viewer-close { padding-left: 20px; border-left: 1px solid #44413b; }
 .viewer-close b { padding-left: 5px; color: var(--amber); font-size: 16px; font-weight: 400; }
 .viewer-stage { min-height: 0; display: grid; place-items: center; overflow: auto; overscroll-behavior: contain; }
 .viewer-stage img { display: block; max-width: min(96vw, 2400px); max-height: calc(100dvh - 116px); width: auto; height: auto; }
-.viewer-stage.actual-size { display: block; text-align: center; }
-.viewer-stage.actual-size img { max-width: none; max-height: none; width: auto; height: auto; margin: 0 auto; }
+.viewer-stage.zoomed { display: block; }
+.viewer-stage.zoomed img { max-width: none; max-height: none; margin: 0 auto; }
 .viewer-foot { min-height: 46px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; border-top: 1px solid #44413b; color: #a9a196; font: 8px var(--mono); letter-spacing: .1em; }
 .viewer-foot span:first-child { color: var(--amber); }
 .viewer-foot i { color: var(--amber); font-style: normal; padding: 0 7px; }
@@ -100,7 +103,8 @@ noscript { position: fixed; z-index: 10; inset: 30% 10%; padding: 24px; backgrou
   .viewer-top { min-height: 54px; padding: 0 11px; font-size: 8px; }
   .viewer-actions { gap: 11px; }
   .viewer-actions button span { display: none; }
-  .viewer-actions .mode-button { min-width: 46px; padding: 8px 4px; }
+  .viewer-zoom { gap: 6px; padding-inline: 7px; }
+  .viewer-zoom .fit-button { min-width: 30px; }
   .viewer-actions .viewer-close { padding-left: 10px; }
   .viewer-foot { min-height: 40px; padding: 0 10px; font-size: 6px; }
   .viewer-stage img { max-width: 96vw; max-height: calc(100dvh - 94px); }
