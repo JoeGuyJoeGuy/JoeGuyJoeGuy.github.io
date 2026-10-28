@@ -161,17 +161,19 @@
         float filament = noise3(spaceDirection * 43.0 + vec3(-2.4, 7.1, u_time * 0.002));
         float broadCloud = smoothstep(0.35, 0.78, cloud);
         float fineCloud = smoothstep(0.48, 0.84, detail);
-        float nebula = broadCloud * 0.3 + fineCloud * 0.12 + smoothstep(0.58, 0.9, filament) * 0.055;
+        float polarHaze = smoothstep(0.62, 0.98, abs(spaceDirection.y)) * (0.34 + fineCloud * 0.66);
+        float nebula = broadCloud * 0.34 + fineCloud * 0.17 + smoothstep(0.58, 0.9, filament) * 0.075 + polarHaze * 0.26;
         vec3 pigment = mix(pigmentA, pigmentB, fineCloud * 0.7);
         pigment = mix(pigment, pigmentC, broadCloud * 0.46);
-        vec3 color = vec3(0.009, 0.012, 0.024) + pigment * nebula * vec3(0.48, 0.42, 0.38);
-        vec3 starCell = floor(spaceDirection * 240.0);
-        vec3 starLocal = fract(spaceDirection * 240.0) - vec3(0.5);
+        vec3 color = vec3(0.018, 0.019, 0.034) + pigment * nebula * vec3(0.52, 0.46, 0.42);
+        color += vec3(0.012, 0.009, 0.025) * polarHaze;
+        vec3 starCell = floor(spaceDirection * 190.0);
+        vec3 starLocal = fract(spaceDirection * 190.0) - vec3(0.5);
         vec3 starOffset = vec3(hash31(starCell + vec3(1.0, 0.0, 0.0)),
                                hash31(starCell + vec3(0.0, 1.0, 0.0)),
                                hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
-        float star = (1.0 - smoothstep(0.012, 0.034, length(starLocal - starOffset))) * step(0.997, hash31(starCell));
-        color += vec3(0.78, 0.57, 0.36) * star * 0.28;
+        float star = (1.0 - smoothstep(0.018, 0.045, length(starLocal - starOffset))) * step(0.994, hash31(starCell));
+        color += vec3(0.78, 0.59, 0.4) * star * 0.34;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
         // Intersect the ray with a flat panel at its moving point on the shell.
