@@ -101,7 +101,9 @@
         float baseLatitude = 1.31 - row * 0.524;
         float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
-        float latitude = mod(baseLatitude - travel + 1.57, 3.14) - 1.57;
+        // Let the spherical coordinates carry panels smoothly through each pole.
+        // The cosine naturally turns them onto the opposite side without a reset.
+        float latitude = baseLatitude - travel;
         float longitude = baseLongitude - travel * 0.72;
         return normalize(vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude)));
       }
@@ -462,7 +464,7 @@
       const baseLongitude = (column - 1) * Math.PI / 3 - Math.PI / 2;
       const baseLatitude = 1.31 - row * 0.524;
       const travel = time * 0.035 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
-      const latitude = ((baseLatitude - travel + 1.57) % 3.14 + 3.14) % 3.14 - 1.57;
+      const latitude = baseLatitude - travel;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
       const panelPosition = [radius * center[0], radius * center[1] * 1.12, radius * center[2]];
