@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11100e">
+  <meta name="description" content="A continuous, immersive world of abstract paintings by Joe Guy.">
+  <title>Joe Guy — Inside the Sphere</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <canvas id="sky" aria-label="A 360 degree abstract painted world. Drag to look around and click a painting to view it in full size."></canvas>
+  <div class="loading" id="loading"><span class="loading-mark"></span><span>BUILDING THE WORLD</span><span class="loading-value">00%</span></div>
+
+  <header class="hud">
+    <a class="identity" href="#" aria-label="Joe Guy home"><span class="identity-name">JOE GUY</span><span class="identity-rule"></span><span class="identity-label">ABSTRACT ARTIST</span></a>
+    <div class="world-label"><span class="pulse"></span><span>ONE CONTINUOUS WORLD</span><span class="degrees">360°</span></div>
+    <button class="fullscreen" id="fullscreen" type="button" aria-label="Enter fullscreen">FULL SCREEN <span aria-hidden="true">⛶</span></button>
+  </header>
+
+  <div class="aim" aria-hidden="true"><span></span></div>
+
+  <section class="entry" id="entry" aria-labelledby="entry-title">
+    <div class="entry-copy">
+      <div class="entry-eyebrow"><span>12 ORIGINAL PAINTINGS</span><span>ONE SHARED SPACE</span></div>
+      <h1 id="entry-title">JOE<br><em>GUY</em></h1>
+      <p class="entry-note">A world made from the inside out.</p>
+      <button class="enter" id="enter" type="button"><span>ENTER THE SPHERE</span><span class="enter-arrow" aria-hidden="true">↗</span></button>
+      <div class="entry-foot"><span>LOOK AROUND <i>↔</i></span><span>MOVE THROUGH <i>W A S D</i></span><span>INSPECT A WORK <i>CLICK</i></span></div>
+    </div>
+    <div class="entry-corner">AN IMMERSIVE COLLECTION<br>BY JOE GUY</div>
+  </section>
+
+  <div class="controls" id="controls" aria-label="Flight controls" hidden>
+    <div class="control-cluster">
+      <button type="button" data-move="forward" aria-label="Fly forward">↑</button>
+      <div><button type="button" data-move="left" aria-label="Fly left">←</button><button type="button" data-move="back" aria-label="Fly backward">↓</button><button type="button" data-move="right" aria-label="Fly right">→</button></div>
+    </div>
+    <span>FLIGHT</span>
+  </div>
+  <div class="world-hint" id="world-hint" hidden><span class="hint-dot"></span>DRAG TO LOOK <i>·</i> WASD TO FLY <i>·</i> CLICK A WORK TO INSPECT</div>
+  <div class="position" id="position" hidden><span>POSITION</span><span id="position-value">CENTRE</span></div>
+
+  <dialog class="art-viewer" id="art-viewer" aria-label="Full-size painting viewer">
+    <div class="viewer-top">
+      <span class="viewer-index" id="viewer-index">01 / 12</span>
+      <div class="viewer-actions">
+        <button class="mode-button" id="mode-button" type="button" aria-pressed="false">100%</button>
+        <button class="viewer-step" id="prev" type="button" aria-label="Previous painting">← <span>PREVIOUS</span></button>
+        <button class="viewer-step" id="next" type="button" aria-label="Next painting"><span>NEXT</span> →</button>
+        <button class="viewer-close" id="close-viewer" type="button">CLOSE <b aria-hidden="true">×</b></button>
+      </div>
+    </div>
+    <div class="viewer-stage" id="viewer-stage"><img id="viewer-image" alt="" draggable="false"></div>
+    <div class="viewer-foot"><span>FULL WORK</span><span>FIT TO SCREEN <i>·</i> 100% TO INSPECT PIXEL DETAIL</span></div>
+  </dialog>
+
+  <noscript>This immersive painting viewer requires JavaScript to create the sky sphere.</noscript>
+</body>
+</html>
