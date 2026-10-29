@@ -502,7 +502,7 @@
         0.18 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.38, 0.20, 0.085] : [0.56, 0.34, 0.17];
+      const color = upper ? [0.23, 0.12, 0.045] : [0.31, 0.17, 0.065];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -543,8 +543,8 @@
     const data = [];
     const detail = compact ? [12, 18] : [20, 30];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.22, 0.12, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.72, 0.68, 0.62], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.14, 0.075, 0.028], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.56, 0.52, 0.48], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data, compact);
     appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
