@@ -338,10 +338,13 @@
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
         float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g);
-        float irisSurface = smoothstep(0.18, 0.48, v_color.r) * (1.0 - smoothstep(0.20, 0.28, v_color.g));
+        // Use the sclera's cooler blue channel to keep fine red vessels out of the amber iris lighting.
+        float irisSurface = smoothstep(0.18, 0.48, v_color.r)
+          * (1.0 - smoothstep(0.20, 0.28, v_color.g))
+          * (1.0 - smoothstep(0.052, 0.080, v_color.b));
         float eyeGloss = max(eyeSurface, irisSurface * 0.34);
         vec3 color = v_color * (0.16 + diffuse * 0.22);
-        color += vec3(0.12, 0.082, 0.050) * eyeSurface;
+        color += vec3(0.20, 0.15, 0.12) * eyeSurface;
         color += vec3(0.105, 0.052, 0.010) * irisSurface;
         color += vec3(0.42, 0.34, 0.24) * specular * 0.19 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
@@ -567,7 +570,7 @@
         const radius = vesselRadius * tip;
         return {
           position: [point[0] + nx * radius * radial, point[1] + ny * radius * radial, point[2] + radius * Math.sin(angle)],
-          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.42 * fade, 0.095 * fade, 0.068 * fade]
+          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.62 * fade, 0.105 * fade, 0.075 * fade]
         };
       };
       for (let s = 0; s < tubeSides; s += 1) {
@@ -714,9 +717,10 @@
       const edge = Math.max(0, Math.min(1, (Math.hypot(unit[0], unit[1]) - 0.36) / 0.64)) * front;
       const lowerFlush = Math.max(0, -unit[1]) * front;
       const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.005 * front;
-      return [0.70 + edge * 0.055 + lowerFlush * 0.016 + grain,
-        0.64 - edge * 0.012 + grain * 0.35,
-        0.55 - edge * 0.018 - lowerFlush * 0.004 + grain * 0.22];
+      // Warm ivory sclera with a fine rose tint at the rim and lower lid, like the reference.
+      return [0.86 + edge * 0.050 + lowerFlush * 0.020 + grain,
+        0.82 - edge * 0.025 + grain * 0.35,
+        0.75 - edge * 0.035 - lowerFlush * 0.010 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
