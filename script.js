@@ -56,10 +56,18 @@
   let throneRings = [];
   let throneEye;
   let throneLid;
+  let seraphim;
+  let seraphEye;
+  let seraphApproachStart = null;
   let throneEyeTexture;
   let throneEyeTextureReady = false;
   let time = 0;
   let lastFrame = 0;
+  let qualityScale = 1;
+  let qualityWindowStart = 0;
+  let qualityFrames = 0;
+  let qualityStableWindows = 0;
+  let qualityWakeAt = 0;
   let lastStamp = performance.now();
   let experienceStarted = false;
   let opened = false;
@@ -163,7 +171,7 @@
         float row = float(index / 6);
         float baseLongitude = (column - 1.0) * (PI / 3.0) - PI * 0.5;
         float baseLatitude = 1.31 - row * 0.524;
-        float speed = 0.0175 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float speed = 0.01225 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
         // Let the spherical coordinates carry panels smoothly through each pole.
         // The cosine naturally turns them onto the opposite side without a reset.
@@ -174,7 +182,7 @@
       float panelPoleFade(int index, float clock) {
         float row = float(index / 6);
         float baseLatitude = 1.31 - row * 0.524;
-        float speed = 0.0175 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float speed = 0.01225 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
         float latitude = baseLatitude - travel;
         // Fade each panel out as it approaches either pole, then ease it back
@@ -563,9 +571,9 @@
     }
   }
 
-  function appendEyeIris(data, compact) {
-    const spokes = compact ? 112 : 180;
-    const bands = compact ? 10 : 14;
+  function appendEyeIris(data, compact, textureDetailOnly = false) {
+    const spokes = compact ? (textureDetailOnly ? 40 : 112) : 180;
+    const bands = compact ? (textureDetailOnly ? 4 : 10) : 14;
     const innerRadius = 0.17;
     const outerRadius = 0.49;
     function vertex(radius, angle) {
@@ -943,7 +951,7 @@
     }
   }
 
-  function makeThroneEye(compact) {
+  function makeThroneEye(compact, textureDetailOnly = false) {
     const data = [];
     const detail = compact ? [12, 18] : [24, 36];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
@@ -966,7 +974,7 @@
         0.65 - edge * 0.018 - lowerFlush * 0.013 - cornerFlush * 0.004 - limbus * 0.010 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
-    appendEyeIris(data, compact);
+    appendEyeIris(data, compact, textureDetailOnly);
     const ringSegments = compact ? 48 : 112;
     const ringSides = compact ? 4 : 6;
     appendEyeDetailRing(data, 0.497, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
@@ -983,21 +991,23 @@
     appendEyeDetailRing(data, 1.065, 0.022, 0.196, [0.36, 0.205, 0.064], ringSegments, ringSides);
     appendEyeDetailRing(data, 1.16, 0.025, 0.065, [0.30, 0.17, 0.054], ringSegments, ringSides);
     appendEyeSocketStuds(data, compact);
-    appendEyeVessel(data, -1, -1, compact);
-    appendEyeVessel(data, -1, 1, compact);
-    appendEyeVessel(data, 1, -1, compact);
-    appendEyeVessel(data, 1, 1, compact);
-    // Fine secondary capillaries add scleral detail while staying inside the same static eye mesh.
-    appendEyeVessel(data, -1, -0.48, compact);
-    appendEyeVessel(data, -1, 0.48, compact);
-    appendEyeVessel(data, 1, -0.48, compact);
-    appendEyeVessel(data, 1, 0.48, compact);
-    // Extra fine branches fill the outer sclera with small, natural capillaries.
-    appendEyeVessel(data, -1, -0.76, compact, true);
-    appendEyeVessel(data, -1, 0.76, compact, true);
-    appendEyeVessel(data, 1, -0.76, compact, true);
-    appendEyeVessel(data, 1, 0.76, compact, true);
-    appendEyeCapillaries(data, compact);
+    if (!textureDetailOnly) {
+      appendEyeVessel(data, -1, -1, compact);
+      appendEyeVessel(data, -1, 1, compact);
+      appendEyeVessel(data, 1, -1, compact);
+      appendEyeVessel(data, 1, 1, compact);
+      // Fine secondary capillaries add scleral detail while staying inside the same static eye mesh.
+      appendEyeVessel(data, -1, -0.48, compact);
+      appendEyeVessel(data, -1, 0.48, compact);
+      appendEyeVessel(data, 1, -0.48, compact);
+      appendEyeVessel(data, 1, 0.48, compact);
+      // Extra fine branches fill the outer sclera with small, natural capillaries.
+      appendEyeVessel(data, -1, -0.76, compact, true);
+      appendEyeVessel(data, -1, 0.76, compact, true);
+      appendEyeVessel(data, 1, -0.76, compact, true);
+      appendEyeVessel(data, 1, 0.76, compact, true);
+      appendEyeCapillaries(data, compact);
+    }
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     appendEyeCrease(data, compact);
@@ -1012,6 +1022,61 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(0), gl.DYNAMIC_DRAW);
     return { buffer, count: 0, compact };
+  }
+
+  function makeSeraphim(compact) {
+    const data = [];
+    const segments = compact ? 5 : 10;
+    const detail = compact ? [10, 14] : [18, 26];
+    const xAxis = [1, 0, 0], yAxis = [0, 1, 0], zAxis = [0, 0, 1];
+    // The core and all six wings share one static mesh and one draw call.
+    appendEyeEllipsoid(data, [0, 0, 0], xAxis, yAxis, zAxis,
+      [4.3, 4.8, 1.55], [0.25, 0.14, 0.055], ...detail);
+    function feather(root, direction, length, width, shade) {
+      const perpendicular = [-direction[1], direction[0]];
+      function vertex(t, side) {
+        const spread = Math.pow(Math.sin(Math.PI * t), 0.72) * width;
+        const curve = Math.sin(Math.PI * t) * 0.42;
+        const p = [root[0] + direction[0] * length * t + perpendicular[0] * spread * side,
+          root[1] + direction[1] * length * t + perpendicular[1] * spread * side,
+          root[2] + curve + (1 - Math.abs(side)) * 0.40 - Math.pow(Math.abs(root[0]) / 20, 2) * 2.8];
+        const n = [0, 0, 1];
+        const edge = 1 - Math.abs(side) * 0.28;
+        const tip = 0.75 + 0.25 * Math.sin(Math.PI * t);
+        return { p, n, c: [0.38 * shade * edge * tip, 0.22 * shade * edge * tip, 0.075 * shade * edge * tip] };
+      }
+      for (let i = 0; i < segments; i += 1) {
+        for (const side of [-1, 0]) {
+          const a = vertex(i / segments, side), b = vertex((i + 1) / segments, side);
+          const c = vertex((i + 1) / segments, side + 1), d = vertex(i / segments, side + 1);
+          for (const v of [a, b, c, a, c, d]) appendMeshVertex(data, v.p, v.n, v.c);
+        }
+      }
+    }
+    for (const side of [-1, 1]) {
+      for (let pair = 0; pair < 3; pair += 1) {
+        const rise = [0.88, 0.13, -0.68][pair];
+        const rootY = [2.7, 0, -2.7][pair];
+        const count = compact ? 8 : 15;
+        // Layered long feathers radiate from an arched leading edge; smaller
+        // coverts sit above them and soften the join to the core.
+        for (let i = 0; i < count; i += 1) {
+          const u = i / (count - 1);
+          const baseX = side * (3.3 + 15.5 * u);
+          const baseY = rootY + rise * 12.0 * u + 2.0 * Math.sin(Math.PI * u);
+          const angle = rise * 0.5 - 0.90 + u * 0.48;
+          const d = [side * Math.cos(angle), Math.sin(angle)];
+          feather([baseX, baseY, -0.36 + pair * 0.18], d, 6.8 + 4.0 * Math.sin(Math.PI * u),
+            0.85 + 0.55 * Math.sin(Math.PI * u), 0.82 + 0.16 * Math.sin(i * 2.3 + pair));
+          if (i % 2 === 0) feather([baseX, baseY + 0.55, 0.05 + pair * 0.18], d,
+            3.2 + 1.5 * Math.sin(Math.PI * u), 0.70, 1.05);
+        }
+      }
+    }
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9 };
   }
 
   function updateThroneLid(mesh, closure) {
@@ -1136,7 +1201,7 @@
   }
 
   function throneProjectionMatrix() {
-    const near = 0.1, far = 200;
+    const near = 0.1, far = 850;
     const f = 1 / Math.tan((Math.PI / 2.35) / 2);
     const aspect = canvas.width / canvas.height;
     return new Float32Array([
@@ -1166,7 +1231,7 @@
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform3f(throneLocations.camera, camera[0], camera[1], camera[2]);
     gl.uniform3f(throneLocations.light, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
-    // The artwork panels drift at 0.0175 rad/s; throne movement stays much slower.
+    // The artwork panels drift at 0.01225 rad/s; throne movement stays much slower.
     const assemblyRotation = rotationMatrix(0.10, time * 0.0005625, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const { position: positionAttribute, normal: normalAttribute, color: colorAttribute } = throneLocations;
@@ -1237,6 +1302,46 @@
         }
       }
     });
+    // The seraphim orbits beyond all three rings and stays within the skybox.
+    // Its inward-facing frame keeps the central eye fixed on the viewer.
+    const orbit = 0.22 + time * 0.0035;
+    if (seraphApproachStart === null) seraphApproachStart = time;
+    const approach = Math.min(1, Math.max(0, (time - seraphApproachStart) / 120));
+    const easedApproach = approach * approach * (3 - 2 * approach);
+    // Even with the camera at its furthest flight limit, this radius leaves
+    // clearance between the closest part of the eye and the outer ring.
+    const seraphOrbitRadius = 235 - 120 * easedApproach;
+    const orbitHeight = (48 + 22 * Math.sin(orbit * 0.67)) * seraphOrbitRadius / 235;
+    const seraphPosition = [Math.sin(orbit) * seraphOrbitRadius, orbitHeight, -Math.cos(orbit) * seraphOrbitRadius];
+    const seraphToCamera = camera.map((value, axis) => value - seraphPosition[axis]);
+    const seraphDistance = Math.hypot(...seraphToCamera) || 1;
+    const seraphNormal = seraphToCamera.map(value => value / seraphDistance);
+    const viewToSeraph = seraphPosition.map((value, axis) => value - camera[axis]);
+    const seraphDepth = viewToSeraph.reduce((sum, value, axis) => sum + value * dirs.forward[axis], 0);
+    const seraphHorizontal = viewToSeraph.reduce((sum, value, axis) => sum + value * dirs.right[axis], 0);
+    const seraphVertical = viewToSeraph.reduce((sum, value, axis) => sum + value * dirs.up[axis], 0);
+    const seraphMargin = 500;
+    if (seraphDepth > -seraphMargin
+      && Math.abs(seraphHorizontal) < Math.max(0, seraphDepth) * tanHalfFov * aspect + seraphMargin
+      && Math.abs(seraphVertical) < Math.max(0, seraphDepth) * tanHalfFov + seraphMargin) {
+      let right = [-seraphNormal[2], 0, seraphNormal[0]];
+      const rightLength = Math.hypot(...right) || 1;
+      right = right.map(value => value / rightLength);
+      const up = [seraphNormal[1] * right[2] - seraphNormal[2] * right[1],
+        seraphNormal[2] * right[0] - seraphNormal[0] * right[2],
+        seraphNormal[0] * right[1] - seraphNormal[1] * right[0]];
+      const frame = throneFrame(seraphPosition, right, up, seraphNormal);
+      drawMesh(seraphim, matrixMultiply(frame, scaleMatrix(12.0)), 1.45);
+      const eyePosition = seraphPosition.map((value, axis) => value + seraphNormal[axis] * 39.6);
+      const eyeFrame = throneFrame(eyePosition, right, up, seraphNormal);
+      const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(36.0));
+      drawMesh(seraphEye, eyeModel, 0.50);
+      const blink = eyeBlinkAmount(time, 9, 0);
+      if (blink > 0.015) {
+        updateThroneLid(throneLid, blink);
+        drawMesh(throneLid, eyeModel, 0.50);
+      }
+    }
     gl.disable(gl.DEPTH_TEST);
   }
 
@@ -1345,7 +1450,9 @@
         ? [makeThroneRing(26.9, 19, true, 0.86), makeThroneRing(36.9, 24, true), makeThroneRing(46.9, 20, true)]
         : [makeThroneRing(27.1, 29, false, 0.86), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
       throneEye = makeThroneEye(compactDevice);
+      seraphEye = makeThroneEye(compactDevice, true);
       throneLid = makeThroneLid(compactDevice);
+      seraphim = makeSeraphim(compactDevice);
       throneEyeTexture = gl.createTexture();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
@@ -1408,7 +1515,7 @@
       gl.uniform1f(sphereLocations.pitch, pitch);
       gl.uniform1f(sphereLocations.fov, Math.PI / 2.35);
       gl.uniform1f(sphereLocations.radius, radius);
-      gl.uniform1f(sphereLocations.skyRadius, 240);
+      gl.uniform1f(sphereLocations.skyRadius, 650);
       gl.uniform1f(sphereLocations.renderLayer, 0);
       gl.uniform1f(sphereLocations.time, 0);
       gl.activeTexture(gl.TEXTURE0);
@@ -1422,7 +1529,7 @@
   }
 
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, compactDevice ? 1.25 : 1.6);
+    const dpr = Math.min(window.devicePixelRatio || 1, compactDevice ? 1.25 : 1.6) * qualityScale;
     const width = Math.max(1, Math.round(window.innerWidth * dpr));
     const height = Math.max(1, Math.round(window.innerHeight * dpr));
     if (canvas.width !== width || canvas.height !== height) {
@@ -1473,6 +1580,38 @@
 
   function render(now = 0) {
     if (!program) return;
+    const rawFrameTime = now - lastFrame;
+    // On compact devices, adjust only the 3D canvas resolution when sustained
+    // frame drops occur. Full-size painting images remain untouched.
+    if (compactDevice) {
+      if (!experienceStarted || dialog.open || document.hidden || rawFrameTime > 250 || rawFrameTime <= 0) {
+        qualityWindowStart = 0;
+        qualityFrames = 0;
+        qualityStableWindows = 0;
+        qualityWakeAt = now + 4000;
+      } else if (now >= qualityWakeAt) {
+        if (!qualityWindowStart) qualityWindowStart = now;
+        qualityFrames += 1;
+        const elapsed = now - qualityWindowStart;
+        if (elapsed >= 3000) {
+          const fps = qualityFrames * 1000 / elapsed;
+          if (fps < 56) {
+            qualityScale = Math.max(0.65, qualityScale - 0.12);
+            qualityStableWindows = 0;
+          } else if (fps >= 59 && qualityScale < 1) {
+            qualityStableWindows += 1;
+            if (qualityStableWindows >= 4) {
+              qualityScale = Math.min(1, qualityScale + 0.06);
+              qualityStableWindows = 0;
+            }
+          } else {
+            qualityStableWindows = 0;
+          }
+          qualityWindowStart = now;
+          qualityFrames = 0;
+        }
+      }
+    }
     resize();
     const delta = Math.min((now - lastFrame) / 1000 || 0, 0.04);
     lastFrame = now;
@@ -1560,7 +1699,7 @@
       const row = Math.floor(index / 6);
       const baseLongitude = (column - 1) * Math.PI / 3 - Math.PI / 2;
       const baseLatitude = 1.31 - row * 0.524;
-      const travel = time * 0.0175 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
+      const travel = time * 0.01225 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
       const latitude = baseLatitude - travel;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
