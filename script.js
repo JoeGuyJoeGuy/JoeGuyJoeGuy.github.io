@@ -133,7 +133,7 @@
         float row = float(index / 6);
         float baseLongitude = (column - 1.0) * (PI / 3.0) - PI * 0.5;
         float baseLatitude = 1.31 - row * 0.524;
-        float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float speed = 0.0175 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
         // Let the spherical coordinates carry panels smoothly through each pole.
         // The cosine naturally turns them onto the opposite side without a reset.
@@ -144,7 +144,7 @@
       float panelPoleFade(int index, float clock) {
         float row = float(index / 6);
         float baseLatitude = 1.31 - row * 0.524;
-        float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float speed = 0.0175 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
         float latitude = baseLatitude - travel;
         // Fade each panel out as it approaches either pole, then ease it back
@@ -338,8 +338,12 @@
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
         float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g);
+        float irisSurface = smoothstep(0.18, 0.48, v_color.r) * (1.0 - smoothstep(0.20, 0.28, v_color.g));
+        float eyeGloss = max(eyeSurface, irisSurface * 0.34);
         vec3 color = v_color * (0.16 + diffuse * 0.22);
-        color += vec3(0.42, 0.34, 0.24) * specular * 0.19 * eyeSurface;
+        color += vec3(0.12, 0.082, 0.050) * eyeSurface;
+        color += vec3(0.105, 0.052, 0.010) * irisSurface;
+        color += vec3(0.42, 0.34, 0.24) * specular * 0.19 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         gl_FragColor = vec4(color, 1.0);
@@ -454,12 +458,13 @@
         + up[axis] * unit[1] / size[1]
         + inward[axis] * unit[2] / size[2]);
       const length = Math.hypot(...normalRaw) || 1;
-      return { position, normal: normalRaw.map(value => value / length) };
+      const vertexColor = typeof color === "function" ? color(unit) : color;
+      return { position, normal: normalRaw.map(value => value / length), color: vertexColor };
     }
     const triangle = (a, b, c) => {
-      appendMeshVertex(data, a.position, a.normal, color);
-      appendMeshVertex(data, b.position, b.normal, color);
-      appendMeshVertex(data, c.position, c.normal, color);
+      appendMeshVertex(data, a.position, a.normal, a.color);
+      appendMeshVertex(data, b.position, b.normal, b.color);
+      appendMeshVertex(data, c.position, c.normal, c.color);
     };
     for (let lat = 0; lat < latitudes; lat += 1) {
       for (let lon = 0; lon < longitudes; lon += 1) {
@@ -471,16 +476,28 @@
   }
 
   function appendEyeIris(data, compact) {
-    const spokes = compact ? 96 : 144;
-    const bands = compact ? 7 : 10;
+    const spokes = compact ? 96 : 168;
+    const bands = compact ? 8 : 12;
     const innerRadius = 0.17;
-    const outerRadius = 0.42;
+    const outerRadius = 0.46;
     function vertex(radius, angle) {
       const fiber = 0.5 + 0.5 * Math.sin(angle * 71.0 + Math.sin(angle * 9.0) * 1.8 + radius * 33.0);
       const crypt = 0.5 + 0.5 * Math.sin(angle * 19.0 + radius * 52.0);
-      const color = [0.29 + fiber * 0.22 + crypt * 0.045, 0.105 + fiber * 0.115 + crypt * 0.026, 0.026 + fiber * 0.038 + crypt * 0.012];
-      const z = 0.38 + 0.11 * (1.0 - radius / outerRadius);
-      return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
+      const innerLight = Math.max(0, 1 - Math.abs(radius - 0.27) / 0.16);
+      const limbalShade = Math.max(0, Math.min(1, (radius - 0.365) / 0.055));
+      const color = [
+        0.42 + fiber * 0.30 + crypt * 0.055 + innerLight * 0.085 - limbalShade * 0.195,
+        0.17 + fiber * 0.19 + crypt * 0.050 + innerLight * 0.075 - limbalShade * 0.065,
+        0.022 + fiber * 0.045 + crypt * 0.016 + innerLight * 0.012 - limbalShade * 0.014
+      ];
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius * 0.96;
+      // Curve the iris just above the sclera so its full amber ring remains visible.
+      const surface = 0.42 * Math.sqrt(Math.max(0.01, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
+      const z = surface + 0.012 + 0.014 * (1.0 - radius / outerRadius);
+      const normalRaw = [x / (1.14 * 1.14), y / (1.02 * 1.02), surface / (0.42 * 0.42)];
+      const normalLength = Math.hypot(...normalRaw) || 1;
+      return { position: [x, y, z], normal: normalRaw.map(value => value / normalLength), color };
     }
     for (let band = 0; band < bands; band += 1) {
       const r0 = innerRadius + (outerRadius - innerRadius) * band / bands;
@@ -525,15 +542,16 @@
   }
 
   function appendEyeVessel(data, side, branch, compact) {
-    const segments = compact ? 12 : 20;
+    const segments = compact ? 10 : 20;
     const tubeSides = 4;
+    const vesselRadius = Math.abs(branch) < 0.6 ? 0.005 : 0.007;
     const points = [];
     for (let i = 0; i <= segments; i += 1) {
       const t = i / segments;
-      const x = side * (1.25 - 0.69 * t);
-      const y = branch * (0.04 + 0.22 * t) + Math.sin(t * Math.PI * 3 + side) * 0.016 * t;
-      const surface = Math.max(0.02, 1 - (x / 1.34) ** 2 - (y / 0.89) ** 2);
-      points.push([x, y, 0.44 * Math.sqrt(surface) + 0.009]);
+      const x = side * (1.06 - 0.54 * t);
+      const y = branch * (0.035 + 0.20 * t) + Math.sin(t * Math.PI * 3 + side) * 0.014 * t;
+      const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
+      points.push([x, y, 0.42 * Math.sqrt(surface) + 0.009, t]);
     }
     for (let i = 0; i < segments; i += 1) {
       const previous = points[Math.max(0, i - 1)], next = points[Math.min(segments, i + 1)];
@@ -543,9 +561,13 @@
       const make = (point, around) => {
         const angle = around / tubeSides * Math.PI * 2;
         const radial = Math.cos(angle);
+        const t = point[3] || 0;
+        const fade = 1.0 - 0.38 * t;
+        const tip = Math.max(0.12, Math.min(1, t / 0.18, (1 - t) / 0.26));
+        const radius = vesselRadius * tip;
         return {
-          position: [point[0] + nx * 0.005 * radial, point[1] + ny * 0.005 * radial, point[2] + 0.005 * Math.sin(angle)],
-          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.29, 0.068, 0.048]
+          position: [point[0] + nx * radius * radial, point[1] + ny * radius * radial, point[2] + radius * Math.sin(angle)],
+          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.42 * fade, 0.095 * fade, 0.068 * fade]
         };
       };
       for (let s = 0; s < tubeSides; s += 1) {
@@ -561,23 +583,23 @@
   }
 
   function appendEyeLidArc(data, start, end, upper, compact) {
-    const segments = compact ? 24 : 36;
-    const sides = compact ? 6 : 8;
-    const tubeRadius = upper ? 0.16 : 0.12;
+    const segments = compact ? 20 : 36;
+    const sides = compact ? 4 : 8;
+    const tubeRadius = upper ? 0.115 : 0.085;
     function point(segment, side) {
       const angle = start + (end - start) * segment / segments;
       const sideAngle = side / sides * Math.PI * 2;
       const radial = Math.cos(sideAngle);
-      const centerX = 1.18 * Math.cos(angle);
-      const centerY = 0.78 * Math.sin(angle);
+      const centerX = 1.04 * Math.cos(angle);
+      const centerY = 0.90 * Math.sin(angle);
       const raised = (upper ? 1 : -1) * 0.035;
-      const surfaceDepth = 0.44 * Math.sqrt(Math.max(0.03, 1 - (centerX / 1.34) ** 2 - (centerY / 0.89) ** 2));
+      const surfaceDepth = 0.42 * Math.sqrt(Math.max(0.03, 1 - (centerX / 1.14) ** 2 - (centerY / 1.02) ** 2));
       const position = [centerX + Math.cos(angle) * tubeRadius * radial,
         centerY + Math.sin(angle) * tubeRadius * radial,
         surfaceDepth + 0.035 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.17, 0.079, 0.038] : [0.19, 0.098, 0.047];
+      const color = upper ? [0.23, 0.105, 0.052] : [0.26, 0.14, 0.068];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -595,21 +617,56 @@
 
   function appendEyeCrease(data, compact) {
     // A soft, shallow upper fold gives the lid a real orbital shape instead of a drawn-on outline.
-    const segments = compact ? 28 : 42;
-    const sides = compact ? 6 : 8;
+    const segments = compact ? 24 : 42;
+    const sides = compact ? 4 : 8;
     const radius = 0.047;
     function point(segment, side) {
       const angle = Math.PI * (0.12 + 0.76 * segment / segments);
       const around = side / sides * Math.PI * 2;
       const radial = Math.cos(around);
-      const x = 1.22 * Math.cos(angle);
-      const y = 0.97 * Math.sin(angle) + 0.045;
-      const z = 0.44 * Math.sqrt(Math.max(0.025, 1 - (x / 1.34) ** 2 - (Math.min(0.88, y) / 0.89) ** 2)) - 0.025;
+      const x = 1.08 * Math.cos(angle);
+      const y = 1.03 * Math.sin(angle) + 0.035;
+      const z = 0.42 * Math.sqrt(Math.max(0.025, 1 - (x / 1.14) ** 2 - (Math.min(1.00, y) / 1.02) ** 2)) - 0.025;
       return {
         position: [x + Math.cos(angle) * radius * radial, y + Math.sin(angle) * radius * radial, z + radius * Math.sin(around)],
         normal: [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(around)],
         color: [0.105, 0.049, 0.025]
       };
+    }
+    for (let segment = 0; segment < segments; segment += 1) {
+      for (let side = 0; side < sides; side += 1) {
+        const a = point(segment, side), b = point(segment + 1, side), c = point(segment + 1, side + 1), d = point(segment, side + 1);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, b.position, b.normal, b.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, d.position, d.normal, d.color);
+      }
+    }
+  }
+
+  function appendEyeBezel(data, compact) {
+    const segments = compact ? 48 : 64;
+    const sides = compact ? 4 : 6;
+    const tubeRadius = 0.042;
+    const radiusX = 1.12;
+    const radiusY = 0.99;
+    function point(segment, side) {
+      const angle = segment / segments * Math.PI * 2;
+      const around = side / sides * Math.PI * 2;
+      const radial = Math.cos(around);
+      const x = radiusX * Math.cos(angle);
+      const y = radiusY * Math.sin(angle);
+      const surface = 0.42 * Math.sqrt(Math.max(0.012, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
+      const glint = 0.5 + 0.5 * Math.cos(segment / segments * Math.PI * 2 * 24);
+      const color = [0.20 + glint * 0.115, 0.105 + glint * 0.064, 0.028 + glint * 0.020];
+      const position = [x + Math.cos(angle) * tubeRadius * radial,
+        y + Math.sin(angle) * tubeRadius * radial,
+        surface + 0.026 + tubeRadius * Math.sin(around)];
+      const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(around)];
+      const length = Math.hypot(...normalRaw) || 1;
+      return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
       for (let side = 0; side < sides; side += 1) {
@@ -649,25 +706,39 @@
 
   function makeThroneEye(compact) {
     const data = [];
-    const detail = compact ? [14, 22] : [24, 36];
+    const detail = compact ? [12, 18] : [24, 36];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.55, 1.08, 0.36], [0.08, 0.04, 0.014], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.34, 0.89, 0.44], [0.67, 0.60, 0.49], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.22], x, y, z, [0.56, 0.52, 0.14], [0.13, 0.055, 0.018], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.33, 1.17, 0.36], [0.22, 0.12, 0.040], ...detail);
+    const scleraColor = unit => {
+      const front = Math.max(0, unit[2]);
+      const edge = Math.max(0, Math.min(1, (Math.hypot(unit[0], unit[1]) - 0.36) / 0.64)) * front;
+      const lowerFlush = Math.max(0, -unit[1]) * front;
+      const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.005 * front;
+      return [0.70 + edge * 0.055 + lowerFlush * 0.016 + grain,
+        0.64 - edge * 0.012 + grain * 0.35,
+        0.55 - edge * 0.018 - lowerFlush * 0.004 + grain * 0.22];
+    };
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
-    appendEyeDetailRing(data, 0.466, 0.016, 0.40, [0.035, 0.017, 0.006]);
-    appendEyeDetailRing(data, 0.21, 0.010, 0.465, [0.13, 0.065, 0.018]);
-    appendEyeEllipsoid(data, [0, 0, 0.49], x, y, z, [0.18, 0.18, 0.068], [0.006, 0.004, 0.003], ...detail);
+    const ringSegments = compact ? 48 : 112;
+    const ringSides = compact ? 4 : 6;
+    appendEyeDetailRing(data, 0.466, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
+    appendEyeDetailRing(data, 0.385, 0.009, 0.413, [0.34, 0.13, 0.025], ringSegments, ringSides);
+    appendEyeDetailRing(data, 0.21, 0.010, 0.446, [0.13, 0.065, 0.018], ringSegments, ringSides);
+    appendEyeEllipsoid(data, [0, 0, 0.445], x, y, z, [0.18, 0.18, 0.035], [0.006, 0.004, 0.003], ...detail);
     // Subtle limbal depth and a small lower iris catchlight add wet, optical depth without glowing.
-    appendEyeDetailRing(data, 0.435, 0.018, 0.408, [0.055, 0.025, 0.008]);
-    appendEyeEllipsoid(data, [-0.13, 0.14, 0.55], x, y, z, [0.058, 0.067, 0.026], [0.42, 0.34, 0.21], ...detail);
-    appendEyeEllipsoid(data, [0.12, -0.19, 0.53], x, y, z, [0.025, 0.018, 0.012], [0.22, 0.16, 0.095], ...detail);
+    appendEyeDetailRing(data, 0.435, 0.012, 0.411, [0.055, 0.025, 0.008], ringSegments, ringSides);
+    appendEyeEllipsoid(data, [-0.13, 0.14, 0.456], x, y, z, [0.082, 0.090, 0.014], [0.90, 0.84, 0.72], ...detail);
+    appendEyeEllipsoid(data, [0.12, -0.19, 0.455], x, y, z, [0.033, 0.024, 0.010], [0.54, 0.46, 0.34], ...detail);
+    appendEyeBezel(data, compact);
     appendEyeVessel(data, -1, -1, compact);
     appendEyeVessel(data, -1, 1, compact);
     appendEyeVessel(data, 1, -1, compact);
     appendEyeVessel(data, 1, 1, compact);
     // Fine secondary capillaries add scleral detail while staying inside the same static eye mesh.
     appendEyeVessel(data, -1, -0.48, compact);
+    appendEyeVessel(data, -1, 0.48, compact);
+    appendEyeVessel(data, 1, -0.48, compact);
     appendEyeVessel(data, 1, 0.48, compact);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
@@ -686,17 +757,20 @@
   }
 
   function updateThroneLid(mesh, closure) {
-    const rows = mesh.compact ? 10 : 16;
-    const columns = mesh.compact ? 18 : 28;
-    const lowerY = 0.89 - closure * 1.78;
+    const rows = mesh.compact ? 8 : 16;
+    const columns = mesh.compact ? 14 : 28;
+    const lowerY = 1.02 - closure * 2.04;
     const data = [];
     function vertex(row, column) {
       const v = row / rows;
-      const y = 0.89 + (lowerY - 0.89) * v;
-      const halfWidth = 1.34 * Math.sqrt(Math.max(0, 1 - (y / 0.89) ** 2));
+      const y = 1.02 + (lowerY - 1.02) * v;
+      const halfWidth = 1.14 * Math.sqrt(Math.max(0, 1 - (y / 1.02) ** 2));
       const x = ((column / columns) * 2 - 1) * halfWidth;
-      const depth = 0.44 * Math.sqrt(Math.max(0.012, 1 - (x / 1.34) ** 2 - (y / 0.89) ** 2)) + 0.012;
-      const normalRaw = [x / (1.34 * 1.34), y / (0.89 * 0.89), depth / (0.44 * 0.44)];
+      const surface = 0.42 * Math.sqrt(Math.max(0.012, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
+      // Lift the closing lid in front of the raised iris and pupil so neither
+      // can show through during a full blink.
+      const depth = surface + 0.10;
+      const normalRaw = [x / (1.14 * 1.14), y / (1.02 * 1.02), surface / (0.42 * 0.42)];
       const normalLength = Math.hypot(...normalRaw) || 1;
       const shade = 0.88 + 0.12 * (1 - v);
       return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.22 * shade, 0.12 * shade, 0.065 * shade] };
@@ -794,14 +868,20 @@
     const dirs = basis();
     const view = throneViewMatrix(dirs);
     const projection = throneProjectionMatrix();
+    const tanHalfFov = Math.tan((Math.PI / 2.35) / 2);
+    const aspect = canvas.width / canvas.height;
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(throneProgram);
-    gl.uniform3f(gl.getUniformLocation(throneProgram, "u_camera"), camera[0], camera[1], camera[2]);
-    gl.uniform3f(gl.getUniformLocation(throneProgram, "u_light"), 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
-    // The artwork panels drift at 0.035 rad/s; throne movement stays much slower.
+    const cameraUniform = gl.getUniformLocation(throneProgram, "u_camera");
+    const lightUniform = gl.getUniformLocation(throneProgram, "u_light");
+    const modelUniform = gl.getUniformLocation(throneProgram, "u_model");
+    const mvpUniform = gl.getUniformLocation(throneProgram, "u_mvp");
+    gl.uniform3f(cameraUniform, camera[0], camera[1], camera[2]);
+    gl.uniform3f(lightUniform, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
+    // The artwork panels drift at 0.0175 rad/s; throne movement stays much slower.
     const assemblyRotation = rotationMatrix(0.10, time * 0.00045, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
@@ -816,8 +896,8 @@
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
-      gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_model"), false, model);
-      gl.uniformMatrix4fv(gl.getUniformLocation(throneProgram, "u_mvp"), false, mvp);
+      gl.uniformMatrix4fv(modelUniform, false, model);
+      gl.uniformMatrix4fv(mvpUniform, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     };
     throneRings.forEach((ring, index) => {
@@ -835,15 +915,23 @@
         const towardCamera = camera.map((value, axis) => value - eyeCenter[axis]);
         const eyeLength = Math.hypot(...towardCamera) || 1;
         const eyeNormal = towardCamera.map(value => value / eyeLength);
-        // Set the eye well inside the belt's opening so its body clears the inner rim.
-        eyeCenter.forEach((value, axis) => { eyeCenter[axis] = value + eyeNormal[axis] * 1.8; });
+        // Seat each eye deeper inside the opening so its enlarged bezel clears the inner rim.
+        eyeCenter.forEach((value, axis) => { eyeCenter[axis] = value + eyeNormal[axis] * 2.1; });
+        const toEye = eyeCenter.map((value, axis) => value - camera[axis]);
+        const depth = toEye[0] * dirs.forward[0] + toEye[1] * dirs.forward[1] + toEye[2] * dirs.forward[2];
+        if (depth <= 0) continue;
+        const horizontal = toEye[0] * dirs.right[0] + toEye[1] * dirs.right[1] + toEye[2] * dirs.right[2];
+        const vertical = toEye[0] * dirs.up[0] + toEye[1] * dirs.up[1] + toEye[2] * dirs.up[2];
+        const eyeMargin = 2.2;
+        if (Math.abs(horizontal) > depth * tanHalfFov * aspect + eyeMargin
+          || Math.abs(vertical) > depth * tanHalfFov + eyeMargin) continue;
         let eyeRight = [eyeNormal[1] * worldUp[2] - eyeNormal[2] * worldUp[1], eyeNormal[2] * worldUp[0] - eyeNormal[0] * worldUp[2], eyeNormal[0] * worldUp[1] - eyeNormal[1] * worldUp[0]];
         if (Math.hypot(...eyeRight) < 0.001) eyeRight = [1, 0, 0];
         const rightLength = Math.hypot(...eyeRight);
         eyeRight = eyeRight.map(value => value / rightLength);
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
         const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
-        const eyeScale = 0.955 + 0.09 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
+        const eyeScale = 1.15 + 0.08 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
         const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(eyeScale));
         drawMesh(throneEye, eyeModel);
         const blink = eyeBlinkAmount(time, index, eyeIndex);
@@ -1117,7 +1205,7 @@
       const row = Math.floor(index / 6);
       const baseLongitude = (column - 1) * Math.PI / 3 - Math.PI / 2;
       const baseLatitude = 1.31 - row * 0.524;
-      const travel = time * 0.035 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
+      const travel = time * 0.0175 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
       const latitude = baseLatitude - travel;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
