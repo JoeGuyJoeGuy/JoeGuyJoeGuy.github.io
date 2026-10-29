@@ -148,6 +148,16 @@
         float high = mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y);
         return mix(low, high, f.z);
       }
+      float starField(vec3 direction, float density, float seed, float threshold) {
+        vec3 position = direction * density + vec3(seed);
+        vec3 cell = floor(position);
+        vec3 local = fract(position) - 0.5;
+        float random = hash31(cell + vec3(11.1, 5.7, 3.4));
+        vec3 offset = (fract(random * vec3(17.17, 41.73, 73.11)) - 0.5) * 0.65;
+        float radius = length(local - offset);
+        float star = 1.0 - smoothstep(0.07, 0.32, radius);
+        return star * step(threshold, random);
+      }
       vec3 panelCenter(int index, float clock) {
         float column = float(index - (index / 6) * 6);
         float row = float(index / 6);
@@ -191,35 +201,29 @@
         vec3 localPositionOnShell = localCamera + localRay * distanceToShell;
         vec3 positionOnShell = vec3(localPositionOnShell.x, localPositionOnShell.y * POD_Y, localPositionOnShell.z);
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
-        // Deep, painted space replaces the plain black gaps. Its pigment comes
-        // from the paintings themselves, with soft clouding and restrained dust.
-        vec3 spaceDirection = normalize(positionOnShell);
-        // Sample only color from three paintings, then build a continuous 3D
-        // nebula field from those pigments. Direction-space noise has no pole seam.
-        vec3 pigmentA = texture2D(u_artwork, vec2(0.125, 0.833)).rgb;
-        vec3 pigmentB = texture2D(u_artwork, vec2(0.375, 0.5)).rgb;
-        vec3 pigmentC = texture2D(u_artwork, vec2(0.625, 0.167)).rgb;
-        float cloud = noise3(spaceDirection * 4.6 + vec3(0.0, 0.0, u_time * 0.003));
-        float detail = noise3(spaceDirection * 17.0 + vec3(4.2, -1.7, 0.0));
-        float filament = noise3(spaceDirection * 43.0 + vec3(-2.4, 7.1, u_time * 0.002));
-        float broadCloud = smoothstep(0.35, 0.78, cloud);
-        float fineCloud = smoothstep(0.48, 0.84, detail);
-        float polarHaze = smoothstep(0.58, 0.98, abs(spaceDirection.y)) * (0.42 + fineCloud * 0.58);
-        float nebula = broadCloud * 0.4 + fineCloud * 0.2 + smoothstep(0.56, 0.9, filament) * 0.09 + polarHaze * 0.36;
-        vec3 pigment = mix(pigmentA, pigmentB, fineCloud * 0.7);
-        pigment = mix(pigment, pigmentC, broadCloud * 0.46);
-        vec3 color = vec3(0.034, 0.036, 0.064) + pigment * nebula * vec3(0.56, 0.48, 0.42);
-        color += vec3(0.022, 0.016, 0.048) * nebula;
-        color += vec3(0.024, 0.018, 0.052) * polarHaze;
-        vec3 starCell = floor(spaceDirection * 140.0);
-        vec3 starLocal = fract(spaceDirection * 140.0) - vec3(0.5);
-        vec3 starOffset = vec3(hash31(starCell + vec3(1.0, 0.0, 0.0)),
-                               hash31(starCell + vec3(0.0, 1.0, 0.0)),
-                               hash31(starCell + vec3(0.0, 0.0, 1.0))) - vec3(0.5);
-        float star = (1.0 - smoothstep(0.07, 0.2, length(starLocal - starOffset))) * step(0.988, hash31(starCell));
-        color += vec3(0.86, 0.67, 0.48) * star * 0.4;
-
         if (u_render_layer < 0.5) {
+          // A distant, continuous sky uses the paintings' colours as a restrained
+          // nebula. Two fixed star shells shift at different rates during flight.
+          vec3 spaceDirection = normalize(positionOnShell);
+          vec3 pigmentA = texture2D(u_artwork, vec2(0.125, 0.833)).rgb;
+          vec3 pigmentB = texture2D(u_artwork, vec2(0.375, 0.5)).rgb;
+          float cloud = noise3(spaceDirection * 4.6);
+          float detail = noise3(spaceDirection * 17.0 + vec3(4.2, -1.7, 0.0));
+          float filament = noise3(spaceDirection * 43.0 + vec3(-2.4, 7.1, 2.0));
+          float broadCloud = smoothstep(0.40, 0.79, cloud);
+          float dust = smoothstep(0.40, 0.84, detail);
+          float galacticBand = 1.0 - smoothstep(0.03, 0.54, abs(dot(spaceDirection, normalize(vec3(0.35, 0.83, -0.43)))));
+          float nebula = broadCloud * 0.28 + galacticBand * (0.13 + dust * 0.22)
+            + smoothstep(0.58, 0.89, filament) * galacticBand * 0.10;
+          vec3 pigment = mix(pigmentA, pigmentB, dust * 0.7);
+          vec3 color = vec3(0.010, 0.015, 0.038) + pigment * nebula * vec3(0.38, 0.30, 0.32);
+          color += vec3(0.025, 0.018, 0.058) * nebula;
+          vec3 farStars = normalize(ray + u_camera / u_sky_radius);
+          vec3 nearStars = normalize(ray + u_camera / 90.0);
+          float fineStars = starField(farStars, 180.0, 7.0, 0.935);
+          float nearStar = starField(nearStars, 105.0, 23.0, 0.978);
+          color += vec3(0.64, 0.72, 0.88) * fineStars * 0.65;
+          color += vec3(0.88, 0.70, 0.52) * nearStar * 0.85;
           vec3 insideNormal = -normal;
           vec3 keyDirection = normalize(vec3(cos(u_time * 0.055), 0.58 + 0.08 * sin(u_time * 0.07), sin(u_time * 0.055)));
           float key = max(dot(insideNormal, keyDirection), 0.0);
@@ -228,7 +232,7 @@
           gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
           return;
         }
-        color = vec3(0.0);
+        vec3 color = vec3(0.0);
         float panelCoverage = 0.0;
 
         // Each work is a separate, undistorted panel sliding over the fixed shell.
@@ -1404,7 +1408,7 @@
       gl.uniform1f(sphereLocations.pitch, pitch);
       gl.uniform1f(sphereLocations.fov, Math.PI / 2.35);
       gl.uniform1f(sphereLocations.radius, radius);
-      gl.uniform1f(sphereLocations.skyRadius, 72);
+      gl.uniform1f(sphereLocations.skyRadius, 240);
       gl.uniform1f(sphereLocations.renderLayer, 0);
       gl.uniform1f(sphereLocations.time, 0);
       gl.activeTexture(gl.TEXTURE0);
