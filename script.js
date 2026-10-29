@@ -5,8 +5,21 @@
   const canvas = document.getElementById("sky");
   const entry = document.getElementById("entry");
   const enterButton = document.getElementById("enter");
-  const loading = document.getElementById("loading");
-  const loadingValue = document.querySelector(".loading-value");
+  const experienceError = document.getElementById("experience-error");
+  const legacyLoading = document.getElementById("loading");
+  const showExperienceError = message => {
+    let status = experienceError || legacyLoading;
+    if (!status) {
+      status = document.createElement("div");
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      document.body.appendChild(status);
+    }
+    if (status === legacyLoading) status.className = "experience-error";
+    if (!status.isConnected) document.body.appendChild(status);
+    status.textContent = message;
+    status.hidden = false;
+  };
   const hint = document.getElementById("world-hint");
   const controls = document.getElementById("controls");
   const positionLabel = document.getElementById("position-value");
@@ -23,7 +36,7 @@
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true, powerPreference: "high-performance" });
 
   if (!gl) {
-    loading.innerHTML = '<span>This experience needs a browser with WebGL enabled.</span>';
+    showExperienceError("This experience needs a browser with WebGL enabled.");
     return;
   }
 
@@ -49,7 +62,10 @@
   let opened = false;
   let currentWork = 0;
   let pointerStart = null;
+  let inspectSwipeStart = null;
   let zoomFactor = 1;
+
+  if (legacyLoading) legacyLoading.remove();
 
   const sources = [];
   let loaded = 0;
@@ -57,7 +73,6 @@
     const image = new Image();
     image.onload = () => {
       loaded += 1;
-      loadingValue.textContent = `${String(Math.round((loaded / skyAssets.length) * 100)).padStart(2, "0")}%`;
       if (loaded === skyAssets.length) {
         sources[index] = image;
         buildWorld(sources);
@@ -68,7 +83,6 @@
     image.onerror = () => {
       loaded += 1;
       sources[index] = null;
-      loadingValue.textContent = `${String(Math.round((loaded / skyAssets.length) * 100)).padStart(2, "0")}%`;
       if (loaded === skyAssets.length) buildWorld(sources);
     };
     image.src = url;
@@ -681,6 +695,85 @@
     }
   }
 
+  function appendEyeCapillaries(data, compact) {
+    // One hundred static, fine vessels are distributed around the full sclera,
+    // each travelling inward toward the limbus. Lower tessellation keeps phones light.
+    const count = 100;
+    const segments = compact ? 4 : 6;
+    const tubeSides = 3;
+    const baseRadius = compact ? 0.0021 : 0.0027;
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const surfaceZ = (x, y) => 0.42 * Math.sqrt(Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
+    const emitPath = (path, radiusScale = 1, colorScale = 1) => {
+      const pathSegments = path.length - 1;
+      for (let i = 0; i < pathSegments; i += 1) {
+        const previous = path[Math.max(0, i - 1)], next = path[Math.min(pathSegments, i + 1)];
+        const dx = next[0] - previous[0], dy = next[1] - previous[1];
+        const length = Math.hypot(dx, dy) || 1;
+        const nx = -dy / length, ny = dx / length;
+        const make = (point, around) => {
+          const angle = around / tubeSides * Math.PI * 2;
+          const radial = Math.cos(angle);
+          const t = point[3];
+          const taper = Math.max(0.16, Math.min(1, 0.26 + t * 3.8, 0.18 + (1 - t) * 2.8));
+          const radius = baseRadius * radiusScale * taper;
+          const fade = 1 - 0.26 * t;
+          return {
+            position: [point[0] + nx * radius * radial, point[1] + ny * radius * radial, point[2] + radius * Math.sin(angle)],
+            normal: [nx * radial, ny * radial, Math.sin(angle)],
+            color: [0.66 * fade * colorScale, 0.31 * fade * colorScale, 0.29 * fade * colorScale]
+          };
+        };
+        for (let side = 0; side < tubeSides; side += 1) {
+          const a = make(path[i], side), b = make(path[i + 1], side);
+          const c = make(path[i + 1], side + 1), d = make(path[i], side + 1);
+          appendMeshVertex(data, a.position, a.normal, a.color);
+          appendMeshVertex(data, b.position, b.normal, b.color);
+          appendMeshVertex(data, c.position, c.normal, c.color);
+          appendMeshVertex(data, a.position, a.normal, a.color);
+          appendMeshVertex(data, c.position, c.normal, c.color);
+          appendMeshVertex(data, d.position, d.normal, d.color);
+        }
+      }
+    };
+
+    for (let index = 0; index < count; index += 1) {
+      const angle = index * goldenAngle;
+      const startRadius = 0.94 + ((index * 37) % 13) / 180;
+      const endRadius = 0.505 + ((index * 19) % 11) / 220;
+      const curve = (((index * 29) % 17) / 16 - 0.5) * 0.32;
+      const path = [];
+      for (let step = 0; step <= segments; step += 1) {
+        const t = step / segments;
+        const radius = startRadius + (endRadius - startRadius) * t;
+        const direction = angle + curve * t + Math.sin(t * Math.PI) * curve * 0.28;
+        const x = 1.14 * radius * Math.cos(direction);
+        const y = 1.02 * radius * Math.sin(direction);
+        path.push([x, y, surfaceZ(x, y) + 0.012, t]);
+      }
+      emitPath(path, 0.60 + ((index * 11) % 7) * 0.075, 0.70 + ((index * 7) % 5) * 0.07);
+
+      // A quarter of the fine vessels sprout a short, delicate feeder branch.
+      if (index % 4 === 0) {
+        const originIndex = Math.round(segments * 0.48);
+        const origin = path[originIndex];
+        const branchDirection = angle + curve * 0.48 + ((index % 8) < 4 ? -0.22 : 0.22);
+        const branchPath = [origin];
+        const branchSegments = compact ? 2 : 3;
+        const branchStartRadius = Math.hypot(origin[0] / 1.14, origin[1] / 1.02);
+        for (let step = 1; step <= branchSegments; step += 1) {
+          const t = step / branchSegments;
+          const radius = branchStartRadius - 0.055 * t;
+          const direction = branchDirection + (((index % 3) - 1) * 0.07 * t);
+          const x = 1.14 * radius * Math.cos(direction);
+          const y = 1.02 * radius * Math.sin(direction);
+          branchPath.push([x, y, surfaceZ(x, y) + 0.013, t]);
+        }
+        emitPath(branchPath, 0.42, 0.58);
+      }
+    }
+  }
+
   function appendEyeLidArc(data, start, end, upper, compact) {
     const segments = compact ? 20 : 36;
     const sides = compact ? 4 : 8;
@@ -834,10 +927,10 @@
       const limbusDelta = (Math.hypot(unit[0], unit[1]) - 0.49) / 0.085;
       const limbus = Math.exp(-(limbusDelta * limbusDelta)) * front;
       const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.008 * front;
-      // Warm ivory sclera with fine rose variation around the limbus and lower lid.
-      return [0.84 + edge * 0.050 + lowerFlush * 0.072 + cornerFlush * 0.045 + limbus * 0.026 + grain,
-        0.81 - edge * 0.030 - lowerFlush * 0.047 - cornerFlush * 0.020 + grain * 0.35,
-        0.76 - edge * 0.040 - lowerFlush * 0.026 - cornerFlush * 0.014 - limbus * 0.024 + grain * 0.22];
+      // Dusty blush sclera, with restrained warmth at the limbus and corners.
+      return [0.72 + edge * 0.035 + lowerFlush * 0.050 + cornerFlush * 0.035 + limbus * 0.018 + grain,
+        0.65 - edge * 0.014 - lowerFlush * 0.018 - cornerFlush * 0.006 + grain * 0.30,
+        0.63 - edge * 0.018 - lowerFlush * 0.013 - cornerFlush * 0.004 - limbus * 0.010 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
@@ -870,6 +963,7 @@
     appendEyeVessel(data, -1, 0.76, compact, true);
     appendEyeVessel(data, 1, -0.76, compact, true);
     appendEyeVessel(data, 1, 0.76, compact, true);
+    appendEyeCapillaries(data, compact);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     appendEyeCrease(data, compact);
@@ -1245,12 +1339,10 @@
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
       resize();
-      loading.classList.add("done");
       render();
     } catch (error) {
       console.error("Sphere could not be prepared", error);
-      loading.innerHTML = '<span>The sphere could not be opened in this browser.</span>';
-      loading.classList.remove("done");
+      showExperienceError("The sphere could not be opened in this browser.");
     }
   }
 
@@ -1511,6 +1603,20 @@
       stage.scrollTo(0, 0);
     }
   }
+  stage.addEventListener("pointerdown", event => {
+    if (event.pointerType !== "touch" || !dialog.open || zoomFactor > 1.001) return;
+    inspectSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+  });
+  stage.addEventListener("pointerup", event => {
+    if (!inspectSwipeStart || inspectSwipeStart.pointerId !== event.pointerId) return;
+    const dx = event.clientX - inspectSwipeStart.x;
+    const dy = event.clientY - inspectSwipeStart.y;
+    inspectSwipeStart = null;
+    if (zoomFactor <= 1.001 && Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      showWork((currentWork + (dx < 0 ? 1 : 11)) % 12);
+    }
+  });
+  stage.addEventListener("pointercancel", () => { inspectSwipeStart = null; });
   dialogImage.addEventListener("load", () => applyZoom(zoomFactor));
   zoomInButton.addEventListener("click", () => applyZoom(zoomFactor * 1.25, true));
   zoomOutButton.addEventListener("click", () => applyZoom(zoomFactor / 1.25, true));
