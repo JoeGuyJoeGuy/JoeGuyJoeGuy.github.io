@@ -32,11 +32,13 @@
   let camera = [0, 0, 0];
   let radius = 14;
   let program;
+  let sphereLocations;
   let skyBuffer;
   let skyPositionAttribute;
   let artworkTexture;
   let artworkMap;
   let throneProgram;
+  let throneLocations;
   let throneRings = [];
   let throneEye;
   let throneLid;
@@ -313,11 +315,13 @@
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
+      varying vec3 v_local;
       void main() {
         vec4 world = u_model * vec4(a_position, 1.0);
         v_world = world.xyz;
         v_normal = normalize(mat3(u_model) * a_normal);
         v_color = a_color;
+        v_local = a_position;
         gl_Position = u_mvp * vec4(a_position, 1.0);
       }
     `);
@@ -328,6 +332,7 @@
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
+      varying vec3 v_local;
       void main() {
         vec3 normal = normalize(v_normal);
         vec3 viewDirection = normalize(u_camera - v_world);
@@ -342,11 +347,47 @@
         float irisSurface = smoothstep(0.18, 0.48, v_color.r)
           * (1.0 - smoothstep(0.20, 0.28, v_color.g))
           * (1.0 - smoothstep(0.052, 0.080, v_color.b));
+        // Capillary vertex colors carry more blue than the amber iris fibers.
+        float vesselSurface = smoothstep(0.42, 0.68, v_color.r)
+          * (1.0 - smoothstep(0.30, 0.50, v_color.g))
+          * smoothstep(0.10, 0.18, v_color.b)
+          * (1.0 - smoothstep(0.32, 0.44, v_color.b));
+        float goldSurface = smoothstep(0.16, 0.30, v_color.r)
+          * (1.0 - smoothstep(0.30, 0.46, v_color.g))
+          * (1.0 - smoothstep(0.12, 0.22, v_color.b));
         float eyeGloss = max(eyeSurface, irisSurface * 0.34);
+        float scleraSurface = eyeSurface * smoothstep(0.58, 0.75, v_color.g)
+          * smoothstep(0.50, 0.68, v_color.b);
+        float scleraGrain = 0.0;
+        float scleraBloom = 0.0;
+        if (scleraSurface > 0.01) {
+          scleraGrain = sin(v_local.x * 91.0 + sin(v_local.y * 35.0) * 2.1)
+            * sin(v_local.y * 83.0 + cos(v_local.x * 29.0));
+          scleraBloom = sin(v_local.x * 6.0 + v_local.y * 4.0)
+            * cos(v_local.y * 5.0 - v_local.x * 3.0);
+        }
         vec3 color = v_color * (0.16 + diffuse * 0.22);
-        color += vec3(0.20, 0.15, 0.12) * eyeSurface;
+        color += vec3(0.32, 0.27, 0.24) * eyeSurface;
+        color += vec3(0.010, 0.006, 0.006) * scleraGrain * scleraSurface;
+        color += vec3(0.010, 0.003, 0.001) * scleraBloom * scleraSurface;
         color += vec3(0.105, 0.052, 0.010) * irisSurface;
-        color += vec3(0.42, 0.34, 0.24) * specular * 0.19 * eyeGloss;
+        // Capillaries should sit as soft warm rose beneath the wet surface,
+        // not read as dark ink when the phone-sized mesh receives little light.
+        color += vec3(0.34, 0.105, 0.095) * vesselSurface;
+        color += vec3(0.14, 0.070, 0.024) * goldSurface;
+        color += vec3(0.34, 0.20, 0.062) * specular * 0.13 * goldSurface;
+        // Fine guilloche engraving on the broad ribbon bands catches a low gold glint.
+        float localRadiusSquared = dot(v_local.xy, v_local.xy);
+        if (localRadiusSquared > 225.0 && goldSurface > 0.12) {
+          float localRadius = sqrt(localRadiusSquared);
+          float ringRadius = localRadius < 28.0 ? 24.0 : (localRadius < 38.0 ? 34.0 : 44.0);
+          float radialOffset = localRadius - ringRadius;
+          float arc = atan(v_local.y, v_local.x) * ringRadius;
+          float engraving = sin(arc * 0.82 + sin(arc * 0.39 + radialOffset * 1.1) * 2.2)
+            * cos(radialOffset * 2.4 + sin(arc * 1.32) * 0.58);
+          color += vec3(0.035, 0.020, 0.006) * engraving * goldSurface;
+        }
+        color += vec3(0.48, 0.39, 0.29) * specular * 0.26 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         gl_FragColor = vec4(color, 1.0);
@@ -479,13 +520,13 @@
   }
 
   function appendEyeIris(data, compact) {
-    const spokes = compact ? 96 : 168;
-    const bands = compact ? 8 : 12;
+    const spokes = compact ? 112 : 180;
+    const bands = compact ? 10 : 14;
     const innerRadius = 0.17;
-    const outerRadius = 0.46;
+    const outerRadius = 0.49;
     function vertex(radius, angle) {
-      const fiber = 0.5 + 0.5 * Math.sin(angle * 71.0 + Math.sin(angle * 9.0) * 1.8 + radius * 33.0);
-      const crypt = 0.5 + 0.5 * Math.sin(angle * 19.0 + radius * 52.0);
+      const fiber = 0.5 + 0.5 * Math.sin(angle * 139.0 + Math.sin(angle * 9.0) * 2.0 + radius * 31.0);
+      const crypt = 0.5 + 0.5 * Math.sin(angle * 31.0 + radius * 64.0);
       const innerLight = Math.max(0, 1 - Math.abs(radius - 0.27) / 0.16);
       const limbalShade = Math.max(0, Math.min(1, (radius - 0.365) / 0.055));
       const color = [
@@ -547,48 +588,83 @@
   function appendEyeVessel(data, side, branch, compact) {
     const segments = compact ? 10 : 20;
     const tubeSides = 4;
-    const vesselRadius = Math.abs(branch) < 0.6 ? 0.005 : 0.007;
+    const vesselRadius = Math.abs(branch) < 0.6 ? 0.0036 : 0.0046;
     const points = [];
     for (let i = 0; i <= segments; i += 1) {
       const t = i / segments;
-      const x = side * (1.06 - 0.54 * t);
-      const y = branch * (0.035 + 0.20 * t) + Math.sin(t * Math.PI * 3 + side) * 0.014 * t;
+      const x = side * (1.06 - (0.48 + Math.abs(branch) * 0.06) * t);
+      const y = branch * (0.035 + 0.20 * t)
+        + Math.sin(t * Math.PI * 2.7 + side) * 0.028 * t
+        + Math.sin(t * Math.PI * 5 + branch) * 0.008 * t;
       const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
       points.push([x, y, 0.42 * Math.sqrt(surface) + 0.009, t]);
     }
-    for (let i = 0; i < segments; i += 1) {
-      const previous = points[Math.max(0, i - 1)], next = points[Math.min(segments, i + 1)];
-      const dx = next[0] - previous[0], dy = next[1] - previous[1];
-      const length = Math.hypot(dx, dy) || 1;
-      const nx = -dy / length, ny = dx / length;
-      const make = (point, around) => {
-        const angle = around / tubeSides * Math.PI * 2;
-        const radial = Math.cos(angle);
-        const t = point[3] || 0;
-        const fade = 1.0 - 0.38 * t;
-        const tip = Math.max(0.12, Math.min(1, t / 0.18, (1 - t) / 0.26));
-        const radius = vesselRadius * tip;
-        return {
-          position: [point[0] + nx * radius * radial, point[1] + ny * radius * radial, point[2] + radius * Math.sin(angle)],
-          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.62 * fade, 0.105 * fade, 0.075 * fade]
+    const drawPath = (path, radiusScale = 1, colorScale = 1) => {
+      const pathSegments = path.length - 1;
+      for (let i = 0; i < pathSegments; i += 1) {
+        const previous = path[Math.max(0, i - 1)], next = path[Math.min(pathSegments, i + 1)];
+        const dx = next[0] - previous[0], dy = next[1] - previous[1];
+        const length = Math.hypot(dx, dy) || 1;
+        const nx = -dy / length, ny = dx / length;
+        const make = (point, around) => {
+          const angle = around / tubeSides * Math.PI * 2;
+          const radial = Math.cos(angle);
+          const t = point[3] || 0;
+          const fade = 1.0 - 0.38 * t;
+          const tip = Math.max(0.12, Math.min(1, t / 0.18, (1 - t) / 0.26));
+          const radius = vesselRadius * radiusScale * tip;
+          return {
+            position: [point[0] + nx * radius * radial, point[1] + ny * radius * radial, point[2] + radius * Math.sin(angle)],
+            normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.82 * fade * colorScale, 0.39 * fade * colorScale, 0.33 * fade * colorScale]
+          };
         };
-      };
-      for (let s = 0; s < tubeSides; s += 1) {
-        const a = make(points[i], s), b = make(points[i + 1], s), c = make(points[i + 1], s + 1), d = make(points[i], s + 1);
-        appendMeshVertex(data, a.position, a.normal, a.color);
-        appendMeshVertex(data, b.position, b.normal, b.color);
-        appendMeshVertex(data, c.position, c.normal, c.color);
-        appendMeshVertex(data, a.position, a.normal, a.color);
-        appendMeshVertex(data, c.position, c.normal, c.color);
-        appendMeshVertex(data, d.position, d.normal, d.color);
+        for (let s = 0; s < tubeSides; s += 1) {
+          const a = make(path[i], s), b = make(path[i + 1], s), c = make(path[i + 1], s + 1), d = make(path[i], s + 1);
+          appendMeshVertex(data, a.position, a.normal, a.color);
+          appendMeshVertex(data, b.position, b.normal, b.color);
+          appendMeshVertex(data, c.position, c.normal, c.color);
+          appendMeshVertex(data, a.position, a.normal, a.color);
+          appendMeshVertex(data, c.position, c.normal, c.color);
+          appendMeshVertex(data, d.position, d.normal, d.color);
+        }
       }
+    };
+    drawPath(points);
+    if (Math.abs(branch) > 0.9) {
+      const splitIndex = Math.round(segments * 0.52);
+      const origin = points[splitIndex];
+      const branchSegments = compact ? 4 : 7;
+      const branchPath = [];
+      const awayFromTrunk = branch > 0 ? -1 : 1;
+      for (let i = 0; i <= branchSegments; i += 1) {
+        const t = i / branchSegments;
+        const x = origin[0] + side * 0.15 * t;
+        const y = origin[1] + awayFromTrunk * (0.11 * t + 0.018 * Math.sin(t * Math.PI));
+        const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
+        branchPath.push([x, y, 0.42 * Math.sqrt(surface) + 0.011, t]);
+      }
+      drawPath(branchPath, 0.52, 0.72);
+
+      // A finer fork splits farther in, echoing the small branching vessels
+      // visible in the reference while staying below a pixel on most phones.
+      const fineOrigin = points[Math.round(segments * 0.76)];
+      const finePath = [];
+      const fineSegments = compact ? 4 : 7;
+      for (let i = 0; i <= fineSegments; i += 1) {
+        const t = i / fineSegments;
+        const x = fineOrigin[0] + side * 0.10 * t;
+        const y = fineOrigin[1] - awayFromTrunk * (0.075 * t + 0.010 * Math.sin(t * Math.PI));
+        const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
+        finePath.push([x, y, 0.42 * Math.sqrt(surface) + 0.010, t]);
+      }
+      drawPath(finePath, 0.42, 0.62);
     }
   }
 
   function appendEyeLidArc(data, start, end, upper, compact) {
     const segments = compact ? 20 : 36;
     const sides = compact ? 4 : 8;
-    const tubeRadius = upper ? 0.115 : 0.085;
+    const tubeRadius = upper ? 0.092 : 0.070;
     function point(segment, side) {
       const angle = start + (end - start) * segment / segments;
       const sideAngle = side / sides * Math.PI * 2;
@@ -602,7 +678,7 @@
         surfaceDepth + 0.035 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.23, 0.105, 0.052] : [0.26, 0.14, 0.068];
+      const color = upper ? [0.28, 0.125, 0.072] : [0.31, 0.155, 0.090];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -663,7 +739,7 @@
       const y = radiusY * Math.sin(angle);
       const surface = 0.42 * Math.sqrt(Math.max(0.012, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
       const glint = 0.5 + 0.5 * Math.cos(segment / segments * Math.PI * 2 * 24);
-      const color = [0.20 + glint * 0.115, 0.105 + glint * 0.064, 0.028 + glint * 0.020];
+      const color = [0.30 + glint * 0.15, 0.17 + glint * 0.085, 0.050 + glint * 0.026];
       const position = [x + Math.cos(angle) * tubeRadius * radial,
         y + Math.sin(angle) * tubeRadius * radial,
         surface + 0.026 + tubeRadius * Math.sin(around)];
@@ -691,15 +767,15 @@
     const halfWidth = compact ? 5.8 : 6.2;
     const halfThickness = compact ? 0.82 : 0.90;
     // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
-    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.12, 0.068, 0.026], segments, sides);
+    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.14, 0.076, 0.029], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
     appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.24, 0.13, 0.045], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane, 0.035, [0.32, 0.21, 0.082], segments, Math.max(10, sides - 2));
     const scrollCount = Math.round(radiusOnPlane * 0.64);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.85, 1.20, scrollCount, [0.29, 0.17, 0.06], segments, 6);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.85, 1.20, scrollCount, [0.29, 0.17, 0.06], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.85, 1.20, scrollCount, [0.34, 0.20, 0.072], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.85, 1.20, scrollCount, [0.34, 0.20, 0.072], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -707,34 +783,59 @@
     return { buffer, count: data.length / 9, radius: radiusOnPlane, bandHalfWidth: halfWidth, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth + 0.35 };
   }
 
+  function appendEyeSocketStuds(data, compact) {
+    const count = compact ? 8 : 12;
+    const detail = compact ? [3, 5] : [4, 6];
+    for (let index = 0; index < count; index += 1) {
+      const angle = index / count * Math.PI * 2;
+      const x = 1.105 * Math.cos(angle);
+      const y = 0.978 * Math.sin(angle);
+      const surface = 0.42 * Math.sqrt(Math.max(0.012, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2));
+      const center = [x, y, surface + 0.055];
+      appendEyeEllipsoid(data, center, [1, 0, 0], [0, 1, 0], [0, 0, 1],
+        [0.034, 0.034, 0.018], [0.47, 0.28, 0.085], ...detail);
+    }
+  }
+
   function makeThroneEye(compact) {
     const data = [];
     const detail = compact ? [12, 18] : [24, 36];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.33, 1.17, 0.36], [0.22, 0.12, 0.040], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.33, 1.17, 0.36], [0.28, 0.15, 0.052], ...detail);
     const scleraColor = unit => {
       const front = Math.max(0, unit[2]);
       const edge = Math.max(0, Math.min(1, (Math.hypot(unit[0], unit[1]) - 0.36) / 0.64)) * front;
       const lowerFlush = Math.max(0, -unit[1]) * front;
-      const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.005 * front;
-      // Warm ivory sclera with a fine rose tint at the rim and lower lid, like the reference.
-      return [0.86 + edge * 0.050 + lowerFlush * 0.020 + grain,
-        0.82 - edge * 0.025 + grain * 0.35,
-        0.75 - edge * 0.035 - lowerFlush * 0.010 + grain * 0.22];
+      const leftCornerDelta = (unit[0] + 0.88) / 0.16;
+      const rightCornerDelta = (unit[0] - 0.88) / 0.16;
+      const cornerY = unit[1] / 0.26;
+      const cornerFlush = Math.max(Math.exp(-(leftCornerDelta * leftCornerDelta) - cornerY * cornerY),
+        Math.exp(-(rightCornerDelta * rightCornerDelta) - cornerY * cornerY)) * front;
+      const limbusDelta = (Math.hypot(unit[0], unit[1]) - 0.49) / 0.085;
+      const limbus = Math.exp(-(limbusDelta * limbusDelta)) * front;
+      const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.008 * front;
+      // Warm ivory sclera with fine rose variation around the limbus and lower lid.
+      return [0.88 + edge * 0.050 + lowerFlush * 0.072 + cornerFlush * 0.045 + limbus * 0.026 + grain,
+        0.85 - edge * 0.030 - lowerFlush * 0.047 - cornerFlush * 0.020 + grain * 0.35,
+        0.80 - edge * 0.040 - lowerFlush * 0.026 - cornerFlush * 0.014 - limbus * 0.024 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
     const ringSegments = compact ? 48 : 112;
     const ringSides = compact ? 4 : 6;
-    appendEyeDetailRing(data, 0.466, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
+    appendEyeDetailRing(data, 0.497, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
     appendEyeDetailRing(data, 0.385, 0.009, 0.413, [0.34, 0.13, 0.025], ringSegments, ringSides);
     appendEyeDetailRing(data, 0.21, 0.010, 0.446, [0.13, 0.065, 0.018], ringSegments, ringSides);
-    appendEyeEllipsoid(data, [0, 0, 0.445], x, y, z, [0.18, 0.18, 0.035], [0.006, 0.004, 0.003], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.445], x, y, z, [0.155, 0.155, 0.035], [0.006, 0.004, 0.003], ...detail);
     // Subtle limbal depth and a small lower iris catchlight add wet, optical depth without glowing.
-    appendEyeDetailRing(data, 0.435, 0.012, 0.411, [0.055, 0.025, 0.008], ringSegments, ringSides);
-    appendEyeEllipsoid(data, [-0.13, 0.14, 0.456], x, y, z, [0.082, 0.090, 0.014], [0.90, 0.84, 0.72], ...detail);
-    appendEyeEllipsoid(data, [0.12, -0.19, 0.455], x, y, z, [0.033, 0.024, 0.010], [0.54, 0.46, 0.34], ...detail);
+    appendEyeDetailRing(data, 0.465, 0.012, 0.411, [0.055, 0.025, 0.008], ringSegments, ringSides);
+    // Two restrained corneal reflections sit high on the iris, like wet studio catchlights.
+    appendEyeEllipsoid(data, [0.045, -0.035, 0.49], x, y, z, [0.026, 0.032, 0.005], [0.94, 0.89, 0.78], ...detail);
+    appendEyeEllipsoid(data, [0.21, -0.035, 0.454], x, y, z, [0.020, 0.024, 0.008], [0.58, 0.55, 0.48], ...detail);
+    // Three finely stepped gold lips seat the eye in its metal socket like the reference.
     appendEyeBezel(data, compact);
+    appendEyeDetailRing(data, 1.065, 0.022, 0.196, [0.36, 0.205, 0.064], ringSegments, ringSides);
+    appendEyeSocketStuds(data, compact);
     appendEyeVessel(data, -1, -1, compact);
     appendEyeVessel(data, -1, 1, compact);
     appendEyeVessel(data, 1, -1, compact);
@@ -764,8 +865,7 @@
     const rows = mesh.compact ? 8 : 16;
     const columns = mesh.compact ? 14 : 28;
     // Finish every blink with a sealed lid so the raised iris and pupil cannot show through.
-    const sealedClosure = closure > 0.82 ? 1 : closure;
-    const lowerY = 1.02 - sealedClosure * 2.04;
+    const lowerY = 1.02 - closure * 2.04;
     const data = [];
     function vertex(row, column) {
       const v = row / rows;
@@ -779,11 +879,36 @@
       const normalRaw = [x / (1.14 * 1.14), y / (1.02 * 1.02), surface / (0.42 * 0.42)];
       const normalLength = Math.hypot(...normalRaw) || 1;
       const shade = 0.88 + 0.12 * (1 - v);
-      return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.22 * shade, 0.12 * shade, 0.065 * shade] };
+      return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.66 * shade, 0.39 * shade, 0.28 * shade] };
     }
     for (let row = 0; row < rows; row += 1) {
       for (let column = 0; column < columns; column += 1) {
         const a = vertex(row, column), b = vertex(row + 1, column), c = vertex(row + 1, column + 1), d = vertex(row, column + 1);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, b.position, b.normal, b.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, d.position, d.normal, d.color);
+      }
+    }
+    const seamT = Math.max(0, Math.min(1, (closure - 0.80) / 0.20));
+    if (seamT > 0) {
+      const segments = mesh.compact ? 16 : 28;
+      const halfWidth = 0.012 * seamT;
+      const seamColor = [0.34 * seamT, 0.115 * seamT, 0.080 * seamT];
+      for (let segment = 0; segment < segments; segment += 1) {
+        const x0 = -1.04 + segment / segments * 2.08;
+        const x1 = -1.04 + (segment + 1) / segments * 2.08;
+        const make = (x, side) => {
+          const normalizedX = x / 1.14;
+          const y = -0.018 + 0.025 * normalizedX * normalizedX + side * halfWidth;
+          const surface = 0.42 * Math.sqrt(Math.max(0.012, 1 - normalizedX * normalizedX - (y / 1.02) ** 2));
+          const normal = [x / (1.14 * 1.14), y / (1.02 * 1.02), surface / (0.42 * 0.42)];
+          const normalLength = Math.hypot(...normal) || 1;
+          return { position: [x, y, surface + 0.125], normal: normal.map(value => value / normalLength), color: seamColor };
+        };
+        const a = make(x0, -1), b = make(x1, -1), c = make(x1, 1), d = make(x0, 1);
         appendMeshVertex(data, a.position, a.normal, a.color);
         appendMeshVertex(data, b.position, b.normal, b.color);
         appendMeshVertex(data, c.position, c.normal, c.color);
@@ -881,18 +1006,12 @@
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(throneProgram);
-    const cameraUniform = gl.getUniformLocation(throneProgram, "u_camera");
-    const lightUniform = gl.getUniformLocation(throneProgram, "u_light");
-    const modelUniform = gl.getUniformLocation(throneProgram, "u_model");
-    const mvpUniform = gl.getUniformLocation(throneProgram, "u_mvp");
-    gl.uniform3f(cameraUniform, camera[0], camera[1], camera[2]);
-    gl.uniform3f(lightUniform, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
+    gl.uniform3f(throneLocations.camera, camera[0], camera[1], camera[2]);
+    gl.uniform3f(throneLocations.light, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
     // The artwork panels drift at 0.0175 rad/s; throne movement stays much slower.
     const assemblyRotation = rotationMatrix(0.10, time * 0.00045, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
-    const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
-    const normalAttribute = gl.getAttribLocation(throneProgram, "a_normal");
-    const colorAttribute = gl.getAttribLocation(throneProgram, "a_color");
+    const { position: positionAttribute, normal: normalAttribute, color: colorAttribute } = throneLocations;
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
@@ -902,8 +1021,8 @@
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
-      gl.uniformMatrix4fv(modelUniform, false, model);
-      gl.uniformMatrix4fv(mvpUniform, false, mvp);
+      gl.uniformMatrix4fv(throneLocations.model, false, model);
+      gl.uniformMatrix4fv(throneLocations.mvp, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     };
     throneRings.forEach((ring, index) => {
@@ -936,7 +1055,12 @@
         const rightLength = Math.hypot(...eyeRight);
         eyeRight = eyeRight.map(value => value / rightLength);
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
-        const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
+        // Keep the gaze aimed inward, but give each eye a slight individual roll so the veins and glints do not repeat mechanically.
+        const eyeRoll = Math.sin(eyeIndex * 5.37 + index * 11.7) * 0.24;
+        const rollCos = Math.cos(eyeRoll), rollSin = Math.sin(eyeRoll);
+        const rolledRight = eyeRight.map((value, axis) => value * rollCos + eyeUp[axis] * rollSin);
+        const rolledUp = eyeUp.map((value, axis) => value * rollCos - eyeRight[axis] * rollSin);
+        const eyeFrame = throneFrame(eyeCenter, rolledRight, rolledUp, eyeNormal);
         const eyeScale = 1.15 + 0.08 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
         const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(eyeScale));
         drawMesh(throneEye, eyeModel);
@@ -1023,8 +1147,29 @@
     opened = true;
     try {
       program = createProgram();
+      sphereLocations = {
+        artwork: gl.getUniformLocation(program, "u_artwork"),
+        resolution: gl.getUniformLocation(program, "u_resolution"),
+        camera: gl.getUniformLocation(program, "u_camera"),
+        yaw: gl.getUniformLocation(program, "u_yaw"),
+        pitch: gl.getUniformLocation(program, "u_pitch"),
+        fov: gl.getUniformLocation(program, "u_fov"),
+        radius: gl.getUniformLocation(program, "u_radius"),
+        skyRadius: gl.getUniformLocation(program, "u_sky_radius"),
+        renderLayer: gl.getUniformLocation(program, "u_render_layer"),
+        time: gl.getUniformLocation(program, "u_time")
+      };
       gl.useProgram(program);
       throneProgram = createThroneProgram();
+      throneLocations = {
+        camera: gl.getUniformLocation(throneProgram, "u_camera"),
+        light: gl.getUniformLocation(throneProgram, "u_light"),
+        model: gl.getUniformLocation(throneProgram, "u_model"),
+        mvp: gl.getUniformLocation(throneProgram, "u_mvp"),
+        position: gl.getAttribLocation(throneProgram, "a_position"),
+        normal: gl.getAttribLocation(throneProgram, "a_normal"),
+        color: gl.getAttribLocation(throneProgram, "a_color")
+      };
       throneRings = compactDevice
         ? [makeThroneRing(24, 19, true), makeThroneRing(34, 24, true), makeThroneRing(44, 20, true)]
         : [makeThroneRing(24, 29, false), makeThroneRing(34, 38, false), makeThroneRing(44, 32, false)];
@@ -1060,16 +1205,16 @@
         }
         images[index] = null;
       });
-      gl.uniform1i(gl.getUniformLocation(program, "u_artwork"), 0);
-      gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), canvas.width, canvas.height);
-      gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
-      gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
-      gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
-      gl.uniform1f(gl.getUniformLocation(program, "u_fov"), Math.PI / 2.35);
-      gl.uniform1f(gl.getUniformLocation(program, "u_radius"), radius);
-      gl.uniform1f(gl.getUniformLocation(program, "u_sky_radius"), 72);
-      gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 0);
-      gl.uniform1f(gl.getUniformLocation(program, "u_time"), 0);
+      gl.uniform1i(sphereLocations.artwork, 0);
+      gl.uniform2f(sphereLocations.resolution, canvas.width, canvas.height);
+      gl.uniform3f(sphereLocations.camera, camera[0], camera[1], camera[2]);
+      gl.uniform1f(sphereLocations.yaw, yaw);
+      gl.uniform1f(sphereLocations.pitch, pitch);
+      gl.uniform1f(sphereLocations.fov, Math.PI / 2.35);
+      gl.uniform1f(sphereLocations.radius, radius);
+      gl.uniform1f(sphereLocations.skyRadius, 72);
+      gl.uniform1f(sphereLocations.renderLayer, 0);
+      gl.uniform1f(sphereLocations.time, 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
       resize();
@@ -1090,7 +1235,7 @@
       canvas.width = width;
       canvas.height = height;
       gl.viewport(0, 0, width, height);
-      if (program) gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), width, height);
+      if (program) gl.uniform2f(sphereLocations.resolution, width, height);
     }
   }
   window.addEventListener("resize", resize, { passive: true });
@@ -1145,11 +1290,11 @@
     gl.vertexAttribPointer(skyPositionAttribute, 2, gl.FLOAT, false, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, artworkTexture);
-    gl.uniform3f(gl.getUniformLocation(program, "u_camera"), camera[0], camera[1], camera[2]);
-    gl.uniform1f(gl.getUniformLocation(program, "u_yaw"), yaw);
-    gl.uniform1f(gl.getUniformLocation(program, "u_pitch"), pitch);
-    gl.uniform1f(gl.getUniformLocation(program, "u_time"), time);
-    gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 0);
+    gl.uniform3f(sphereLocations.camera, camera[0], camera[1], camera[2]);
+    gl.uniform1f(sphereLocations.yaw, yaw);
+    gl.uniform1f(sphereLocations.pitch, pitch);
+    gl.uniform1f(sphereLocations.time, time);
+    gl.uniform1f(sphereLocations.renderLayer, 0);
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -1158,7 +1303,7 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
     gl.enableVertexAttribArray(skyPositionAttribute);
     gl.vertexAttribPointer(skyPositionAttribute, 2, gl.FLOAT, false, 0, 0);
-    gl.uniform1f(gl.getUniformLocation(program, "u_render_layer"), 1);
+    gl.uniform1f(sphereLocations.renderLayer, 1);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
