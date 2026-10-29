@@ -57,7 +57,8 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .control-cluster { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .control-cluster > div { display: flex; gap: 3px; }
 .control-cluster button { width: 29px; height: 26px; border: 1px solid rgb(235 225 207 / .24); background: rgb(12 11 10 / .45); color: var(--amber); backdrop-filter: blur(7px); }
-.control-cluster button:hover, .control-cluster button:active { background: #deb07844; }
+.control-cluster button[data-flight-key] { font: 9px var(--mono); letter-spacing: 0; }
+.control-cluster button:hover, .control-cluster button:active { border-color: #bd8e4b; background: #deb07844; }
 
 .art-viewer { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #090908; color: var(--ink); }
 .art-viewer::backdrop { background: #090908; }
@@ -97,11 +98,13 @@ noscript { position: fixed; z-index: 10; inset: 30% 10%; padding: 24px; backgrou
   .entry-note { margin: 18px 0 23px; }
   .entry-foot { gap: 11px 17px; font-size: 7px; }
   .entry-corner { display: none; }
-  .world-hint { bottom: 19px; width: calc(100% - 118px); left: auto; right: 14px; transform: none; text-align: center; font-size: 6px; letter-spacing: .04em; padding: 9px 5px; }
+  .world-hint { bottom: 19px; width: calc(100% - 128px); left: auto; right: 14px; transform: none; text-align: center; font-size: 6px; letter-spacing: .04em; padding: 9px 5px; }
   .world-hint i { padding: 0 3px; }
+  .hint-inspect, .hint-inspect-separator { display: none; }
   .controls { left: 13px; bottom: 11px; }
   .position { display: none; }
   .control-cluster button { width: 26px; height: 24px; }
+  .control-cluster button[data-flight-key] { font-size: 8px; }
   .viewer-top { min-height: 54px; padding: 0 11px; font-size: 8px; }
   .viewer-actions { gap: 7px; }
   .viewer-actions .viewer-step { min-width: 38px; min-height: 38px; padding-inline: 7px; font-size: 14px; }
