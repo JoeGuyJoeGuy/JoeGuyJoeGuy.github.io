@@ -46,6 +46,8 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .enter-arrow { color: var(--amber); font-size: 17px; }
 .entry-foot { display: flex; flex-wrap: wrap; gap: 18px 27px; margin-top: clamp(35px, 6vh, 68px); color: #c4b9aa; font: 8px var(--mono); letter-spacing: .08em; }
 .entry-foot i { padding-left: 5px; color: var(--amber); font-style: normal; }
+.spotify-link { color: #c4b9aa; text-decoration: none; transition: color .2s; }
+.spotify-link:hover { color: var(--amber); }
 .entry-corner { position: absolute; bottom: 29px; right: clamp(18px, 3.2vw, 52px); color: #bbb1a4; text-align: right; font: 8px/1.7 var(--mono); letter-spacing: .11em; }
 .world-hint { position: fixed; z-index: 3; bottom: 27px; left: 50%; transform: translateX(-50%); padding: 11px 15px; border: 1px solid rgb(235 225 207 / .22); border-radius: 2px; background: rgb(12 11 10 / .47); color: #e6ddcf; white-space: nowrap; backdrop-filter: blur(10px); font: 8px var(--mono); letter-spacing: .12em; transition: opacity .5s; }
 .world-hint[hidden], .position[hidden], .controls[hidden] { display: none; }
