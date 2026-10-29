@@ -339,7 +339,7 @@
         // highlights preserve the sculpted bronze without pulling focus.
         float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g);
         vec3 color = v_color * (0.16 + diffuse * 0.22);
-        color += vec3(0.36, 0.30, 0.22) * specular * 0.16 * eyeSurface;
+        color += vec3(0.42, 0.34, 0.24) * specular * 0.19 * eyeSurface;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         gl_FragColor = vec4(color, 1.0);
@@ -478,7 +478,7 @@
     function vertex(radius, angle) {
       const fiber = 0.5 + 0.5 * Math.sin(angle * 71.0 + Math.sin(angle * 9.0) * 1.8 + radius * 33.0);
       const crypt = 0.5 + 0.5 * Math.sin(angle * 19.0 + radius * 52.0);
-      const color = [0.20 + fiber * 0.16 + crypt * 0.035, 0.082 + fiber * 0.090 + crypt * 0.018, 0.024 + fiber * 0.035 + crypt * 0.008];
+      const color = [0.29 + fiber * 0.22 + crypt * 0.045, 0.105 + fiber * 0.115 + crypt * 0.026, 0.026 + fiber * 0.038 + crypt * 0.012];
       const z = 0.38 + 0.11 * (1.0 - radius / outerRadius);
       return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
     }
@@ -545,7 +545,7 @@
         const radial = Math.cos(angle);
         return {
           position: [point[0] + nx * 0.005 * radial, point[1] + ny * 0.005 * radial, point[2] + 0.005 * Math.sin(angle)],
-          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.15, 0.032, 0.024]
+          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.29, 0.068, 0.048]
         };
       };
       for (let s = 0; s < tubeSides; s += 1) {
@@ -652,7 +652,7 @@
     const detail = compact ? [14, 22] : [24, 36];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
     appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.55, 1.08, 0.36], [0.08, 0.04, 0.014], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.34, 0.89, 0.44], [0.54, 0.49, 0.39], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.34, 0.89, 0.44], [0.67, 0.60, 0.49], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0.22], x, y, z, [0.56, 0.52, 0.14], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data, compact);
     appendEyeDetailRing(data, 0.466, 0.016, 0.40, [0.035, 0.017, 0.006]);
@@ -666,6 +666,9 @@
     appendEyeVessel(data, -1, 1, compact);
     appendEyeVessel(data, 1, -1, compact);
     appendEyeVessel(data, 1, 1, compact);
+    // Fine secondary capillaries add scleral detail while staying inside the same static eye mesh.
+    appendEyeVessel(data, -1, -0.48, compact);
+    appendEyeVessel(data, 1, 0.48, compact);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     appendEyeCrease(data, compact);
@@ -818,7 +821,7 @@
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     };
     throneRings.forEach((ring, index) => {
-      const speed = [0.0012, -0.0010, 0.0009][index];
+      const speed = [0.0024, -0.0020, 0.0018][index];
       const tilt = [[1.48, 0.00], [1.48, 1.05], [1.34, -1.05]][index];
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
