@@ -563,22 +563,53 @@
   function appendEyeLidArc(data, start, end, upper, compact) {
     const segments = compact ? 24 : 36;
     const sides = compact ? 6 : 8;
-    const tubeRadius = 0.14;
+    const tubeRadius = upper ? 0.16 : 0.12;
     function point(segment, side) {
       const angle = start + (end - start) * segment / segments;
       const sideAngle = side / sides * Math.PI * 2;
       const radial = Math.cos(sideAngle);
       const centerX = 1.18 * Math.cos(angle);
       const centerY = 0.78 * Math.sin(angle);
-      const raised = (upper ? 1 : -1) * 0.045;
+      const raised = (upper ? 1 : -1) * 0.035;
       const surfaceDepth = 0.44 * Math.sqrt(Math.max(0.03, 1 - (centerX / 1.34) ** 2 - (centerY / 0.89) ** 2));
       const position = [centerX + Math.cos(angle) * tubeRadius * radial,
         centerY + Math.sin(angle) * tubeRadius * radial,
         surfaceDepth + 0.035 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.115, 0.055, 0.024] : [0.15, 0.078, 0.034];
+      const color = upper ? [0.17, 0.079, 0.038] : [0.19, 0.098, 0.047];
       return { position, normal: normalRaw.map(value => value / length), color };
+    }
+    for (let segment = 0; segment < segments; segment += 1) {
+      for (let side = 0; side < sides; side += 1) {
+        const a = point(segment, side), b = point(segment + 1, side), c = point(segment + 1, side + 1), d = point(segment, side + 1);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, b.position, b.normal, b.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, d.position, d.normal, d.color);
+      }
+    }
+  }
+
+  function appendEyeCrease(data, compact) {
+    // A soft, shallow upper fold gives the lid a real orbital shape instead of a drawn-on outline.
+    const segments = compact ? 28 : 42;
+    const sides = compact ? 6 : 8;
+    const radius = 0.047;
+    function point(segment, side) {
+      const angle = Math.PI * (0.12 + 0.76 * segment / segments);
+      const around = side / sides * Math.PI * 2;
+      const radial = Math.cos(around);
+      const x = 1.22 * Math.cos(angle);
+      const y = 0.97 * Math.sin(angle) + 0.045;
+      const z = 0.44 * Math.sqrt(Math.max(0.025, 1 - (x / 1.34) ** 2 - (Math.min(0.88, y) / 0.89) ** 2)) - 0.025;
+      return {
+        position: [x + Math.cos(angle) * radius * radial, y + Math.sin(angle) * radius * radial, z + radius * Math.sin(around)],
+        normal: [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(around)],
+        color: [0.105, 0.049, 0.025]
+      };
     }
     for (let segment = 0; segment < segments; segment += 1) {
       for (let side = 0; side < sides; side += 1) {
@@ -627,13 +658,17 @@
     appendEyeDetailRing(data, 0.466, 0.016, 0.40, [0.035, 0.017, 0.006]);
     appendEyeDetailRing(data, 0.21, 0.010, 0.465, [0.13, 0.065, 0.018]);
     appendEyeEllipsoid(data, [0, 0, 0.49], x, y, z, [0.18, 0.18, 0.068], [0.006, 0.004, 0.003], ...detail);
+    // Subtle limbal depth and a small lower iris catchlight add wet, optical depth without glowing.
+    appendEyeDetailRing(data, 0.435, 0.018, 0.408, [0.055, 0.025, 0.008]);
     appendEyeEllipsoid(data, [-0.13, 0.14, 0.55], x, y, z, [0.058, 0.067, 0.026], [0.42, 0.34, 0.21], ...detail);
+    appendEyeEllipsoid(data, [0.12, -0.19, 0.53], x, y, z, [0.025, 0.018, 0.012], [0.22, 0.16, 0.095], ...detail);
     appendEyeVessel(data, -1, -1, compact);
     appendEyeVessel(data, -1, 1, compact);
     appendEyeVessel(data, 1, -1, compact);
     appendEyeVessel(data, 1, 1, compact);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
+    appendEyeCrease(data, compact);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
