@@ -1570,6 +1570,10 @@
     stage.classList.remove("zoomed");
     dialogImage.style.width = "";
     dialogImage.style.height = "";
+    const rotatedWork = currentWork === 0;
+    dialogImage.style.transform = rotatedWork ? "rotate(90deg)" : "";
+    dialogImage.style.maxWidth = rotatedWork ? "none" : "";
+    dialogImage.style.maxHeight = rotatedWork ? "none" : "";
     zoomValue.textContent = "100%";
     stage.scrollTo(0, 0);
     dialogImage.src = artwork[currentWork];
@@ -1585,20 +1589,25 @@
     if (!dialogImage.naturalWidth || !dialogImage.naturalHeight) return;
     const oldWidth = dialogImage.getBoundingClientRect().width;
     const oldHeight = dialogImage.getBoundingClientRect().height;
+    const rotatedWork = currentWork === 0;
     const fitWidth = Math.min(stage.clientWidth, window.innerWidth * 0.96, 2400);
     const fitHeight = Math.min(stage.clientHeight, window.innerHeight - 116);
-    const fitScale = Math.min(fitWidth / dialogImage.naturalWidth, fitHeight / dialogImage.naturalHeight, 1);
+    const visualWidth = rotatedWork ? dialogImage.naturalHeight : dialogImage.naturalWidth;
+    const visualHeight = rotatedWork ? dialogImage.naturalWidth : dialogImage.naturalHeight;
+    const fitScale = Math.min(fitWidth / visualWidth, fitHeight / visualHeight, 1);
     const maxZoom = 1 / fitScale;
     zoomFactor = Math.max(1, Math.min(maxZoom, nextFactor));
     const width = dialogImage.naturalWidth * fitScale * zoomFactor;
     const height = dialogImage.naturalHeight * fitScale * zoomFactor;
+    const visibleWidth = rotatedWork ? height : width;
+    const visibleHeight = rotatedWork ? width : height;
     dialogImage.style.width = `${width}px`;
     dialogImage.style.height = `${height}px`;
     stage.classList.toggle("zoomed", zoomFactor > 1.001);
     zoomValue.textContent = `${Math.round(zoomFactor * 100)}%`;
     if (preserveCenter && oldWidth && oldHeight) {
-      stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (width / oldWidth) - stage.clientWidth / 2;
-      stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (height / oldHeight) - stage.clientHeight / 2;
+      stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (visibleWidth / oldWidth) - stage.clientWidth / 2;
+      stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (visibleHeight / oldHeight) - stage.clientHeight / 2;
     } else if (zoomFactor === 1) {
       stage.scrollTo(0, 0);
     }
