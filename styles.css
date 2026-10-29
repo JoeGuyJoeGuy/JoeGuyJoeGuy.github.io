@@ -77,9 +77,11 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .viewer-actions .viewer-close { padding-left: 20px; border-left: 1px solid #44413b; }
 .viewer-close b { padding-left: 5px; color: var(--amber); font-size: 16px; font-weight: 400; }
 .viewer-stage { min-height: 0; display: grid; place-items: center; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
-.viewer-stage img { display: block; max-width: min(96vw, 2400px); max-height: calc(100dvh - 116px); width: auto; height: auto; }
+.viewer-image-frame { position: relative; display: block; flex: none; margin: 0 auto; }
+.viewer-image-frame img { display: block; width: auto; height: auto; max-width: none; max-height: none; }
+.viewer-image-frame.rotated img { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(90deg); }
 .viewer-stage.zoomed { display: block; }
-.viewer-stage.zoomed img { max-width: none; max-height: none; margin: 0 auto; }
+.viewer-stage.zoomed .viewer-image-frame { margin: 0 auto; }
 .viewer-foot { min-height: 46px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; border-top: 1px solid #44413b; color: #a9a196; font: 8px var(--mono); letter-spacing: .1em; }
 .viewer-foot span:first-child { color: var(--amber); }
 .viewer-foot i { color: var(--amber); font-style: normal; padding: 0 7px; }
