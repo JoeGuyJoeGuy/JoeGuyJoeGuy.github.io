@@ -56,6 +56,8 @@
   let throneRings = [];
   let throneEye;
   let throneLid;
+  let throneEyeTexture;
+  let throneEyeTextureReady = false;
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -346,6 +348,10 @@
       uniform vec3 u_camera;
       uniform vec3 u_light;
       uniform float u_render_gain;
+      uniform float u_ring_radius;
+      uniform float u_band_half_width;
+      uniform sampler2D u_eye_texture;
+      uniform float u_eye_texture_ready;
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
@@ -374,6 +380,10 @@
           * (1.0 - smoothstep(0.30, 0.46, v_color.g))
           * (1.0 - smoothstep(0.12, 0.22, v_color.b));
         float eyeGloss = max(eyeSurface, irisSurface * 0.34);
+        float eyeRadius = length(v_local.xy * vec2(1.0 / 1.14, 1.0 / 1.02));
+        float irisDetail = (1.0 - smoothstep(0.47, 0.51, length(v_local.xy)))
+          * smoothstep(0.08, 0.18, v_color.r) * (1.0 - smoothstep(0.08, 0.16, v_color.b));
+        if (u_eye_texture_ready > 0.5 && u_ring_radius == 0.0 && vesselSurface > 0.12 && eyeRadius < 1.02) discard;
         float scleraSurface = eyeSurface * smoothstep(0.58, 0.75, v_color.g)
           * smoothstep(0.50, 0.68, v_color.b);
         float scleraGrain = 0.0;
@@ -388,26 +398,38 @@
         color += vec3(0.30, 0.235, 0.245) * eyeSurface;
         color += vec3(0.010, 0.006, 0.006) * scleraGrain * scleraSurface;
         color += vec3(0.010, 0.003, 0.001) * scleraBloom * scleraSurface;
-        color += vec3(0.105, 0.052, 0.010) * irisSurface;
+        color += vec3(0.080, 0.038, 0.007) * irisSurface;
         // Capillaries should sit as soft warm rose beneath the wet surface,
         // not read as dark ink when the phone-sized mesh receives little light.
         color += vec3(0.34, 0.105, 0.095) * vesselSurface;
         color += vec3(0.14, 0.070, 0.024) * goldSurface;
         color += vec3(0.34, 0.20, 0.062) * specular * 0.13 * goldSurface;
-        // Fine guilloche engraving on the broad ribbon bands catches a low gold glint.
+        // Layered engraving follows each individual band around its full circumference.
         float localRadiusSquared = dot(v_local.xy, v_local.xy);
-        if (localRadiusSquared > 225.0 && goldSurface > 0.12) {
+        if (u_ring_radius > 0.0 && localRadiusSquared > 225.0 && goldSurface > 0.12) {
           float localRadius = sqrt(localRadiusSquared);
-          float ringRadius = localRadius < 28.0 ? 24.0 : (localRadius < 38.0 ? 34.0 : 44.0);
-          float radialOffset = localRadius - ringRadius;
-          float arc = atan(v_local.y, v_local.x) * ringRadius;
-          float engraving = sin(arc * 0.82 + sin(arc * 0.39 + radialOffset * 1.1) * 2.2)
-            * cos(radialOffset * 2.4 + sin(arc * 1.32) * 0.58);
-          color += vec3(0.035, 0.020, 0.006) * engraving * goldSurface;
+          float radialOffset = localRadius - u_ring_radius;
+          float arc = atan(v_local.y, v_local.x) * u_ring_radius;
+          float bandAcross = abs(radialOffset) > u_band_half_width - 0.8 ? v_local.z * 3.2 : radialOffset;
+          float scroll = sin(arc * 1.10 + sin(bandAcross * 0.8) * 1.5)
+            * cos(bandAcross * 1.7 + sin(arc * 0.55) * 1.2);
+          float fineCut = sin(arc * 4.0 + sin(radialOffset * 2.2))
+            * sin(bandAcross * 4.5 + cos(arc * 0.8));
+          float bead = pow(max(0.0, cos(arc * 2.8)), 10.0);
+          float borders = exp(-abs(abs(radialOffset) - (u_band_half_width - 0.6)) * 2.4);
+          color += vec3(0.027, 0.015, 0.004) * scroll * goldSurface;
+          color += vec3(0.012, 0.007, 0.002) * fineCut * goldSurface;
+          color += vec3(0.050, 0.029, 0.008) * bead * borders * goldSurface;
         }
         color += vec3(0.48, 0.39, 0.29) * specular * 0.26 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
+        if (u_eye_texture_ready > 0.5 && u_ring_radius == 0.0 && v_local.z > 0.04) {
+          vec2 eyeUv = v_local.xy / vec2(2.28, 2.04) + 0.5;
+          vec3 referenceEye = texture2D(u_eye_texture, clamp(eyeUv, 0.0, 1.0)).rgb;
+          float referenceMask = max(eyeSurface, irisDetail) * (1.0 - smoothstep(0.94, 1.0, eyeRadius));
+          color = mix(color, referenceEye * 1.05, referenceMask * 0.92);
+        }
         gl_FragColor = vec4(color * u_render_gain, 1.0);
       }
     `);
@@ -546,11 +568,11 @@
       const fiber = 0.5 + 0.5 * Math.sin(angle * 139.0 + Math.sin(angle * 9.0) * 2.0 + radius * 31.0);
       const crypt = 0.5 + 0.5 * Math.sin(angle * 31.0 + radius * 64.0);
       const innerLight = Math.max(0, 1 - Math.abs(radius - 0.27) / 0.16);
-      const limbalShade = Math.max(0, Math.min(1, (radius - 0.365) / 0.055));
+      const limbalShade = Math.max(0, Math.min(1, (radius - 0.37) / 0.10));
       const color = [
         0.42 + fiber * 0.30 + crypt * 0.055 + innerLight * 0.085 - limbalShade * 0.195,
         0.17 + fiber * 0.19 + crypt * 0.050 + innerLight * 0.075 - limbalShade * 0.065,
-        0.022 + fiber * 0.045 + crypt * 0.016 + innerLight * 0.012 - limbalShade * 0.014
+        0.022 + fiber * 0.045 + crypt * 0.016 + innerLight * 0.012 + limbalShade * 0.026
       ];
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius * 0.96;
@@ -878,18 +900,24 @@
     const data = [];
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
-    const halfWidth = compact ? 8.7 : 9.3;
+    // Keep each ring and its eyes inside a separate radial shell. The
+    // inward-facing ribbon below supplies the visible width of the band.
+    const halfWidth = 2.8;
     const halfThickness = (compact ? 1.35 : 1.45) * bandThicknessScale;
     // Broad ribbon faces sit just wider than the eyes, with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.14, 0.076, 0.029], segments, sides);
+    // A broad inward-facing ribbon gives the eye sockets a continuous metal backing.
+    // Its inner surface remains behind the eyes as they turn toward the camera.
+    appendTorusBelt(data, radiusOnPlane - halfWidth + 0.78, 0.42, 1.80,
+      [0.23, 0.128, 0.046], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
     appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.24, 0.13, 0.045], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane, 0.035, [0.32, 0.21, 0.082], segments, Math.max(10, sides - 2));
     const scrollCount = Math.round(radiusOnPlane * 0.64);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.85, 1.20, scrollCount, [0.34, 0.20, 0.072], segments, 6);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.85, 1.20, scrollCount, [0.34, 0.20, 0.072], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.30, 0.85, scrollCount, [0.34, 0.20, 0.072], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.30, 0.85, scrollCount, [0.34, 0.20, 0.072], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -949,6 +977,7 @@
     // Three finely stepped gold lips seat the eye in its metal socket like the reference.
     appendEyeBezel(data, compact);
     appendEyeDetailRing(data, 1.065, 0.022, 0.196, [0.36, 0.205, 0.064], ringSegments, ringSides);
+    appendEyeDetailRing(data, 1.16, 0.025, 0.065, [0.30, 0.17, 0.054], ringSegments, ringSides);
     appendEyeSocketStuds(data, compact);
     appendEyeVessel(data, -1, -1, compact);
     appendEyeVessel(data, -1, 1, compact);
@@ -1126,6 +1155,11 @@
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(throneProgram);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
+    gl.uniform1i(throneLocations.eyeTexture, 1);
+    gl.uniform1f(throneLocations.eyeTextureReady, throneEyeTextureReady ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform3f(throneLocations.camera, camera[0], camera[1], camera[2]);
     gl.uniform3f(throneLocations.light, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
     // The artwork panels drift at 0.0175 rad/s; throne movement stays much slower.
@@ -1135,13 +1169,15 @@
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
-    const drawMesh = (mesh, model, renderGain = 1) => {
+    const drawMesh = (mesh, model, renderGain = 1, ringRadius = 0, bandHalfWidth = 0) => {
       const mvp = matrixMultiply(projection, matrixMultiply(view, model));
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
       gl.uniform1f(throneLocations.renderGain, renderGain);
+      gl.uniform1f(throneLocations.ringRadius, ringRadius);
+      gl.uniform1f(throneLocations.bandHalfWidth, bandHalfWidth);
       gl.uniformMatrix4fv(throneLocations.model, false, model);
       gl.uniformMatrix4fv(throneLocations.mvp, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
@@ -1152,7 +1188,7 @@
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
       const model = matrixMultiply(ringRotation, scaleMatrix(1));
-      drawMesh(ring, model, 1.875);
+      drawMesh(ring, model, 1.875, ring.radius, ring.bandHalfWidth);
       const worldUp = [0, 1, 0];
       for (let eyeIndex = 0; eyeIndex < ring.eyeCount; eyeIndex += 1) {
         const angle = (eyeIndex / ring.eyeCount) * Math.PI * 2;
@@ -1176,8 +1212,13 @@
         const rightLength = Math.hypot(...eyeRight);
         eyeRight = eyeRight.map(value => value / rightLength);
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
-        // Keep the gaze aimed inward, but give each eye a slight individual roll so the veins and glints do not repeat mechanically.
-        const eyeRoll = Math.sin(eyeIndex * 5.37 + index * 11.7) * 0.24;
+        // Short, independent tremors give each eye a watchful twitch without
+        // turning its gaze away from the viewer.
+        const twitchSeed = eyeIndex * 1.73 + index * 4.19;
+        const twitchPeriod = 4.8 + ((eyeIndex * 13 + index * 7) % 19) * 0.21;
+        const twitchTime = (time + twitchSeed) % twitchPeriod;
+        const twitch = Math.exp(-twitchTime * twitchTime * 15) * Math.sin(twitchTime * 38) * 0.045;
+        const eyeRoll = Math.sin(eyeIndex * 5.37 + index * 11.7) * 0.24 + twitch;
         const rollCos = Math.cos(eyeRoll), rollSin = Math.sin(eyeRoll);
         const rolledRight = eyeRight.map((value, axis) => value * rollCos + eyeUp[axis] * rollSin);
         const rolledUp = eyeUp.map((value, axis) => value * rollCos - eyeRight[axis] * rollSin);
@@ -1286,6 +1327,10 @@
         camera: gl.getUniformLocation(throneProgram, "u_camera"),
         light: gl.getUniformLocation(throneProgram, "u_light"),
         renderGain: gl.getUniformLocation(throneProgram, "u_render_gain"),
+        ringRadius: gl.getUniformLocation(throneProgram, "u_ring_radius"),
+        bandHalfWidth: gl.getUniformLocation(throneProgram, "u_band_half_width"),
+        eyeTexture: gl.getUniformLocation(throneProgram, "u_eye_texture"),
+        eyeTextureReady: gl.getUniformLocation(throneProgram, "u_eye_texture_ready"),
         model: gl.getUniformLocation(throneProgram, "u_model"),
         mvp: gl.getUniformLocation(throneProgram, "u_mvp"),
         position: gl.getAttribLocation(throneProgram, "a_position"),
@@ -1297,6 +1342,31 @@
         : [makeThroneRing(27.1, 29, false, 0.86), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
       throneEye = makeThroneEye(compactDevice);
       throneLid = makeThroneLid(compactDevice);
+      throneEyeTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 100, 96, 255]));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const reference = new Image();
+      reference.onload = () => {
+        const detail = document.createElement("canvas");
+        detail.width = 512;
+        detail.height = 512;
+        detail.getContext("2d").drawImage(reference, 540, 520, 176, 121, 0, 0, 512, 512);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, detail);
+        gl.activeTexture(gl.TEXTURE0);
+        throneEyeTextureReady = true;
+        detail.width = 1;
+        detail.height = 1;
+      };
+      reference.src = "artwork/reference/throne.png";
+      gl.activeTexture(gl.TEXTURE0);
       skyBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
