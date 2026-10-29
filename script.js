@@ -1022,8 +1022,8 @@
       gl.useProgram(program);
       throneProgram = createThroneProgram();
       throneRings = compactDevice
-        ? [makeThroneRing(24, 28, true), makeThroneRing(34, 24, true), makeThroneRing(44, 20, true)]
-        : [makeThroneRing(24, 44, false), makeThroneRing(34, 38, false), makeThroneRing(44, 32, false)];
+        ? [makeThroneRing(24, 19, true), makeThroneRing(34, 24, true), makeThroneRing(44, 20, true)]
+        : [makeThroneRing(24, 29, false), makeThroneRing(34, 38, false), makeThroneRing(44, 32, false)];
       throneEye = makeThroneEye(compactDevice);
       throneLid = makeThroneLid(compactDevice);
       skyBuffer = gl.createBuffer();
