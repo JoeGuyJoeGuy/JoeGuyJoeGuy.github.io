@@ -141,6 +141,16 @@
         float longitude = baseLongitude - travel * 0.72;
         return normalize(vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude)));
       }
+      float panelPoleFade(int index, float clock) {
+        float row = float(index / 6);
+        float baseLatitude = 1.31 - row * 0.524;
+        float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
+        float travel = clock * speed + float(index) * 0.001;
+        float latitude = baseLatitude - travel;
+        // Ease paintings into the space pigment as each panel crosses a pole,
+        // hiding the change of tangent frame and preventing a visible pop.
+        return smoothstep(0.0, 0.28, abs(cos(latitude)));
+      }
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
       float scale = tan(u_fov * 0.5);
@@ -229,7 +239,7 @@
             if (panelDistance > 0.0 && insidePanel) {
               float edgeX = 1.0 - smoothstep(0.66, 1.0, abs(panelUV.x * 2.0 - 1.0));
               float edgeY = 1.0 - smoothstep(0.66, 1.0, abs(panelUV.y * 2.0 - 1.0));
-              float opacity = edgeX * edgeY;
+              float opacity = edgeX * edgeY * panelPoleFade(i, u_time);
               int workIndex = i - (i / 12) * 12;
               float artColumn = float(workIndex - (workIndex / 4) * 4);
               float artRow = float(workIndex / 4);
