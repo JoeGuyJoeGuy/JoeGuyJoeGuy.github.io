@@ -1152,7 +1152,7 @@
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
       const model = matrixMultiply(ringRotation, scaleMatrix(1));
-      drawMesh(ring, model, 1.25);
+      drawMesh(ring, model, 1.875);
       const worldUp = [0, 1, 0];
       for (let eyeIndex = 0; eyeIndex < ring.eyeCount; eyeIndex += 1) {
         const angle = (eyeIndex / ring.eyeCount) * Math.PI * 2;
@@ -1184,11 +1184,11 @@
         const eyeFrame = throneFrame(eyeCenter, rolledRight, rolledUp, eyeNormal);
         const eyeScale = 1.15 + 0.08 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
         const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(eyeScale));
-        drawMesh(throneEye, eyeModel, 0.75);
+        drawMesh(throneEye, eyeModel, 0.375);
         const blink = eyeBlinkAmount(time, index, eyeIndex);
         if (blink > 0.015) {
           updateThroneLid(throneLid, blink);
-          drawMesh(throneLid, eyeModel, 0.75);
+          drawMesh(throneLid, eyeModel, 0.375);
         }
       }
     });
