@@ -788,7 +788,7 @@
         const eyeLength = Math.hypot(...towardCamera) || 1;
         const eyeNormal = towardCamera.map(value => value / eyeLength);
         // Set the eye well inside the belt's opening so its body clears the inner rim.
-        eyeCenter.forEach((value, axis) => { eyeCenter[axis] = value + eyeNormal[axis] * 1.25; });
+        eyeCenter.forEach((value, axis) => { eyeCenter[axis] = value + eyeNormal[axis] * 1.8; });
         let eyeRight = [eyeNormal[1] * worldUp[2] - eyeNormal[2] * worldUp[1], eyeNormal[2] * worldUp[0] - eyeNormal[0] * worldUp[2], eyeNormal[0] * worldUp[1] - eyeNormal[1] * worldUp[0]];
         if (Math.hypot(...eyeRight) < 0.001) eyeRight = [1, 0, 0];
         const rightLength = Math.hypot(...eyeRight);
