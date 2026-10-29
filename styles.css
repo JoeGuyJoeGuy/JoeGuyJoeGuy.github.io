@@ -22,7 +22,8 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .hud { position: fixed; inset: 0 0 auto; z-index: 4; height: 74px; padding: 0 clamp(18px, 3.2vw, 52px); display: flex; align-items: center; justify-content: space-between; background: linear-gradient(#11100eaa, transparent); pointer-events: none; }
 .hud a, .hud button { pointer-events: auto; }
 .identity { display: flex; align-items: center; gap: 13px; text-decoration: none; }
-.identity-name { font-size: 15px; font-weight: 650; letter-spacing: -.04em; }
+.identity-name { font-size: 15px; font-weight: 650; letter-spacing: -.04em; transition: color .2s; }
+.identity:hover .identity-name { color: var(--amber); }
 .identity-rule { height: 18px; width: 1px; background: var(--line); }
 .identity-label, .world-label, .fullscreen { color: #d3c9ba; font: 9px var(--mono); letter-spacing: .1em; }
 .world-label { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; white-space: nowrap; }

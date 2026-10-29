@@ -45,6 +45,7 @@
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
+  let experienceStarted = false;
   let opened = false;
   let currentWork = 0;
   let pointerStart = null;
@@ -329,6 +330,7 @@
       precision mediump float;
       uniform vec3 u_camera;
       uniform vec3 u_light;
+      uniform float u_render_gain;
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
@@ -342,7 +344,8 @@
         float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
-        float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g);
+        float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g)
+          * smoothstep(0.45, 0.62, v_color.b);
         // Use the sclera's cooler blue channel to keep fine red vessels out of the amber iris lighting.
         float irisSurface = smoothstep(0.18, 0.48, v_color.r)
           * (1.0 - smoothstep(0.20, 0.28, v_color.g))
@@ -390,7 +393,7 @@
         color += vec3(0.48, 0.39, 0.29) * specular * 0.26 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
-        gl_FragColor = vec4(color, 1.0);
+        gl_FragColor = vec4(color * u_render_gain, 1.0);
       }
     `);
     const next = gl.createProgram();
@@ -585,10 +588,10 @@
     }
   }
 
-  function appendEyeVessel(data, side, branch, compact) {
+  function appendEyeVessel(data, side, branch, compact, fine = false) {
     const segments = compact ? 10 : 20;
     const tubeSides = 4;
-    const vesselRadius = Math.abs(branch) < 0.6 ? 0.0036 : 0.0046;
+    const vesselRadius = fine ? (compact ? 0.0021 : 0.0028) : (Math.abs(branch) < 0.6 ? 0.0036 : 0.0046);
     const points = [];
     for (let i = 0; i <= segments; i += 1) {
       const t = i / segments;
@@ -630,7 +633,7 @@
       }
     };
     drawPath(points);
-    if (Math.abs(branch) > 0.9) {
+    if (Math.abs(branch) > 0.7) {
       const splitIndex = Math.round(segments * 0.52);
       const origin = points[splitIndex];
       const branchSegments = compact ? 4 : 7;
@@ -657,7 +660,24 @@
         const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
         finePath.push([x, y, 0.42 * Math.sqrt(surface) + 0.010, t]);
       }
-      drawPath(finePath, 0.42, 0.62);
+      drawPath(finePath, fine ? 0.34 : 0.42, 0.62);
+
+      // Two short, hairline twigs per feeder create an irregular surface web;
+      // their shorter length and tapered radius keep the center over the iris clear.
+      for (let fork = 0; fork < 2; fork += 1) {
+        const twigOrigin = points[Math.round(segments * (fork === 0 ? 0.34 : 0.66))];
+        const twigSegments = compact ? 3 : 5;
+        const twigPath = [];
+        const direction = (branch > 0 ? -1 : 1) * (fork === 0 ? 1 : -1);
+        for (let i = 0; i <= twigSegments; i += 1) {
+          const t = i / twigSegments;
+          const x = twigOrigin[0] + side * (fine ? 0.045 : 0.070) * t;
+          const y = twigOrigin[1] + direction * (0.034 * t + 0.008 * Math.sin(t * Math.PI));
+          const surface = Math.max(0.02, 1 - (x / 1.14) ** 2 - (y / 1.02) ** 2);
+          twigPath.push([x, y, 0.42 * Math.sqrt(surface) + 0.010, t]);
+        }
+        drawPath(twigPath, fine ? 0.38 : 0.30, 0.68);
+      }
     }
   }
 
@@ -678,7 +698,7 @@
         surfaceDepth + 0.035 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.28, 0.125, 0.072] : [0.31, 0.155, 0.090];
+      const color = upper ? [0.19, 0.12, 0.095] : [0.21, 0.145, 0.12];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -764,7 +784,7 @@
     const data = [];
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
-    const halfWidth = compact ? 5.8 : 6.2;
+    const halfWidth = compact ? 8.7 : 9.3;
     const halfThickness = compact ? 0.82 : 0.90;
     // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.14, 0.076, 0.029], segments, sides);
@@ -815,9 +835,9 @@
       const limbus = Math.exp(-(limbusDelta * limbusDelta)) * front;
       const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.008 * front;
       // Warm ivory sclera with fine rose variation around the limbus and lower lid.
-      return [0.88 + edge * 0.050 + lowerFlush * 0.072 + cornerFlush * 0.045 + limbus * 0.026 + grain,
-        0.85 - edge * 0.030 - lowerFlush * 0.047 - cornerFlush * 0.020 + grain * 0.35,
-        0.80 - edge * 0.040 - lowerFlush * 0.026 - cornerFlush * 0.014 - limbus * 0.024 + grain * 0.22];
+      return [0.84 + edge * 0.050 + lowerFlush * 0.072 + cornerFlush * 0.045 + limbus * 0.026 + grain,
+        0.81 - edge * 0.030 - lowerFlush * 0.047 - cornerFlush * 0.020 + grain * 0.35,
+        0.76 - edge * 0.040 - lowerFlush * 0.026 - cornerFlush * 0.014 - limbus * 0.024 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
@@ -845,6 +865,11 @@
     appendEyeVessel(data, -1, 0.48, compact);
     appendEyeVessel(data, 1, -0.48, compact);
     appendEyeVessel(data, 1, 0.48, compact);
+    // Extra fine branches fill the outer sclera with small, natural capillaries.
+    appendEyeVessel(data, -1, -0.76, compact, true);
+    appendEyeVessel(data, -1, 0.76, compact, true);
+    appendEyeVessel(data, 1, -0.76, compact, true);
+    appendEyeVessel(data, 1, 0.76, compact, true);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     appendEyeCrease(data, compact);
@@ -879,7 +904,7 @@
       const normalRaw = [x / (1.14 * 1.14), y / (1.02 * 1.02), surface / (0.42 * 0.42)];
       const normalLength = Math.hypot(...normalRaw) || 1;
       const shade = 0.88 + 0.12 * (1 - v);
-      return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.66 * shade, 0.39 * shade, 0.28 * shade] };
+      return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.48 * shade, 0.38 * shade, 0.33 * shade] };
     }
     for (let row = 0; row < rows; row += 1) {
       for (let column = 0; column < columns; column += 1) {
@@ -896,7 +921,7 @@
     if (seamT > 0) {
       const segments = mesh.compact ? 16 : 28;
       const halfWidth = 0.012 * seamT;
-      const seamColor = [0.34 * seamT, 0.115 * seamT, 0.080 * seamT];
+      const seamColor = [0.23 * seamT, 0.17 * seamT, 0.14 * seamT];
       for (let segment = 0; segment < segments; segment += 1) {
         const x0 = -1.04 + segment / segments * 2.08;
         const x1 = -1.04 + (segment + 1) / segments * 2.08;
@@ -995,7 +1020,7 @@
   }
 
   function drawThrone() {
-    if (!entry.classList.contains("leaving") || dialog.open || !throneProgram) return;
+    if (!experienceStarted || dialog.open || !throneProgram) return;
     const dirs = basis();
     const view = throneViewMatrix(dirs);
     const projection = throneProjectionMatrix();
@@ -1015,12 +1040,13 @@
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
-    const drawMesh = (mesh, model) => {
+    const drawMesh = (mesh, model, renderGain = 1) => {
       const mvp = matrixMultiply(projection, matrixMultiply(view, model));
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribPointer(normalAttribute, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
       gl.vertexAttribPointer(colorAttribute, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
+      gl.uniform1f(throneLocations.renderGain, renderGain);
       gl.uniformMatrix4fv(throneLocations.model, false, model);
       gl.uniformMatrix4fv(throneLocations.mvp, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
@@ -1031,7 +1057,7 @@
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
       const model = matrixMultiply(ringRotation, scaleMatrix(1));
-      drawMesh(ring, model);
+      drawMesh(ring, model, 1.25);
       const worldUp = [0, 1, 0];
       for (let eyeIndex = 0; eyeIndex < ring.eyeCount; eyeIndex += 1) {
         const angle = (eyeIndex / ring.eyeCount) * Math.PI * 2;
@@ -1063,11 +1089,11 @@
         const eyeFrame = throneFrame(eyeCenter, rolledRight, rolledUp, eyeNormal);
         const eyeScale = 1.15 + 0.08 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
         const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(eyeScale));
-        drawMesh(throneEye, eyeModel);
+        drawMesh(throneEye, eyeModel, 0.75);
         const blink = eyeBlinkAmount(time, index, eyeIndex);
         if (blink > 0.015) {
           updateThroneLid(throneLid, blink);
-          drawMesh(throneLid, eyeModel);
+          drawMesh(throneLid, eyeModel, 0.75);
         }
       }
     });
@@ -1164,6 +1190,7 @@
       throneLocations = {
         camera: gl.getUniformLocation(throneProgram, "u_camera"),
         light: gl.getUniformLocation(throneProgram, "u_light"),
+        renderGain: gl.getUniformLocation(throneProgram, "u_render_gain"),
         model: gl.getUniformLocation(throneProgram, "u_model"),
         mvp: gl.getUniformLocation(throneProgram, "u_mvp"),
         position: gl.getAttribLocation(throneProgram, "a_position"),
@@ -1171,8 +1198,8 @@
         color: gl.getAttribLocation(throneProgram, "a_color")
       };
       throneRings = compactDevice
-        ? [makeThroneRing(24, 19, true), makeThroneRing(34, 24, true), makeThroneRing(44, 20, true)]
-        : [makeThroneRing(24, 29, false), makeThroneRing(34, 38, false), makeThroneRing(44, 32, false)];
+        ? [makeThroneRing(26.9, 19, true), makeThroneRing(36.9, 24, true), makeThroneRing(46.9, 20, true)]
+        : [makeThroneRing(27.1, 29, false), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
       throneEye = makeThroneEye(compactDevice);
       throneLid = makeThroneLid(compactDevice);
       skyBuffer = gl.createBuffer();
@@ -1311,7 +1338,17 @@
     requestAnimationFrame(render);
   }
 
+  document.querySelector(".identity").addEventListener("click", event => {
+    event.preventDefault();
+    if (!experienceStarted) return;
+    entry.classList.remove("leaving");
+    hint.hidden = true;
+    controls.hidden = true;
+    document.getElementById("position").hidden = true;
+  });
+
   enterButton.addEventListener("click", () => {
+    experienceStarted = true;
     entry.classList.add("leaving");
     hint.hidden = false;
     controls.hidden = false;
