@@ -759,7 +759,9 @@
   function updateThroneLid(mesh, closure) {
     const rows = mesh.compact ? 8 : 16;
     const columns = mesh.compact ? 14 : 28;
-    const lowerY = 1.02 - closure * 2.04;
+    // Finish every blink with a sealed lid so the raised iris and pupil cannot show through.
+    const sealedClosure = closure > 0.82 ? 1 : closure;
+    const lowerY = 1.02 - sealedClosure * 2.04;
     const data = [];
     function vertex(row, column) {
       const v = row / rows;
