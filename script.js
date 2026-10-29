@@ -1128,7 +1128,7 @@
     gl.uniform3f(throneLocations.camera, camera[0], camera[1], camera[2]);
     gl.uniform3f(throneLocations.light, 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
     // The artwork panels drift at 0.0175 rad/s; throne movement stays much slower.
-    const assemblyRotation = rotationMatrix(0.10, time * 0.00045, -0.06);
+    const assemblyRotation = rotationMatrix(0.10, time * 0.0005625, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const { position: positionAttribute, normal: normalAttribute, color: colorAttribute } = throneLocations;
     gl.enableVertexAttribArray(positionAttribute);
@@ -1557,9 +1557,9 @@
   document.addEventListener("keyup", event => held.delete(event.key.toLowerCase()));
   window.addEventListener("blur", () => held.clear());
 
-  document.querySelectorAll("[data-move]").forEach(button => {
+  document.querySelectorAll("[data-move], [data-flight-key]").forEach(button => {
     const keyByDirection = { forward: "w", back: "s", left: "a", right: "d" };
-    const key = keyByDirection[button.dataset.move];
+    const key = button.dataset.flightKey || keyByDirection[button.dataset.move];
     button.addEventListener("pointerdown", event => { event.preventDefault(); held.add(key); button.setPointerCapture(event.pointerId); });
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(name => button.addEventListener(name, () => held.delete(key)));
   });
