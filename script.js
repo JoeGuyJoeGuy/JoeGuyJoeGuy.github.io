@@ -874,12 +874,12 @@
     }
   }
 
-  function makeThroneRing(radiusOnPlane, eyeCount, compact) {
+  function makeThroneRing(radiusOnPlane, eyeCount, compact, bandThicknessScale = 1) {
     const data = [];
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
     const halfWidth = compact ? 8.7 : 9.3;
-    const halfThickness = compact ? 1.35 : 1.45;
+    const halfThickness = (compact ? 1.35 : 1.45) * bandThicknessScale;
     // Broad ribbon faces sit just wider than the eyes, with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.14, 0.076, 0.029], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
@@ -1293,8 +1293,8 @@
         color: gl.getAttribLocation(throneProgram, "a_color")
       };
       throneRings = compactDevice
-        ? [makeThroneRing(26.9, 19, true), makeThroneRing(36.9, 24, true), makeThroneRing(46.9, 20, true)]
-        : [makeThroneRing(27.1, 29, false), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
+        ? [makeThroneRing(26.9, 19, true, 0.86), makeThroneRing(36.9, 24, true), makeThroneRing(46.9, 20, true)]
+        : [makeThroneRing(27.1, 29, false, 0.86), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
       throneEye = makeThroneEye(compactDevice);
       throneLid = makeThroneLid(compactDevice);
       skyBuffer = gl.createBuffer();
