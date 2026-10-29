@@ -328,8 +328,8 @@
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
         vec3 color = v_color * (0.11 + diffuse * 0.19);
-        color += vec3(0.62, 0.39, 0.16) * specular * 0.07;
-        color += vec3(0.16, 0.085, 0.028) * fresnel * 0.035;
+        color += vec3(0.52, 0.31, 0.12) * specular * 0.025;
+        color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         gl_FragColor = vec4(color, 1.0);
       }
     `);
@@ -465,7 +465,7 @@
     const outerRadius = 0.34;
     function vertex(radius, angle) {
       const pulse = 0.5 + 0.5 * Math.sin(angle * 43.0 + radius * 31.0);
-      const color = [0.24 + pulse * 0.32, 0.09 + pulse * 0.19, 0.025 + pulse * 0.065];
+      const color = [0.08 + pulse * 0.12, 0.035 + pulse * 0.07, 0.012 + pulse * 0.025];
       const z = 0.36 + 0.10 * (1.0 - radius / outerRadius);
       return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
     }
@@ -502,7 +502,7 @@
         0.18 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.23, 0.12, 0.045] : [0.31, 0.17, 0.065];
+      const color = upper ? [0.09, 0.045, 0.016] : [0.13, 0.065, 0.022];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -522,8 +522,8 @@
     const data = [];
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
-    const halfWidth = compact ? 1.9 : 2.2;
-    const halfThickness = compact ? 0.22 : 0.28;
+    const halfWidth = compact ? 2.3 : 2.45;
+    const halfThickness = compact ? 0.30 : 0.36;
     // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.12, 0.068, 0.026], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
@@ -531,8 +531,8 @@
     appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane, 0.035, [0.32, 0.21, 0.082], segments, Math.max(10, sides - 2));
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.48, 0.30, 20, [0.24, 0.14, 0.048], segments, 6);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.48, 0.30, 20, [0.24, 0.14, 0.048], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.60, 0.40, 20, [0.24, 0.14, 0.048], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.60, 0.40, 20, [0.24, 0.14, 0.048], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -543,12 +543,12 @@
     const data = [];
     const detail = compact ? [12, 18] : [20, 30];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.14, 0.075, 0.028], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.56, 0.52, 0.48], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.08, 0.04, 0.014], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.22, 0.20, 0.18], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data, compact);
     appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
-    appendEyeEllipsoid(data, [-0.105, 0.12, 0.486], x, y, z, [0.067, 0.078, 0.027], [1.0, 0.96, 0.86], ...detail);
+    appendEyeEllipsoid(data, [-0.105, 0.12, 0.486], x, y, z, [0.067, 0.078, 0.027], [0.12, 0.10, 0.08], ...detail);
     appendEyeLidArc(data, 0, Math.PI, true, compact);
     appendEyeLidArc(data, Math.PI, Math.PI * 2, false, compact);
     const buffer = gl.createBuffer();
@@ -560,7 +560,7 @@
   function makeThroneLid(compact) {
     const data = [];
     const detail = compact ? [8, 12] : [12, 18];
-    appendEyeEllipsoid(data, [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.91, 0.61, 0.14], [0.38, 0.20, 0.085], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.91, 0.61, 0.14], [0.13, 0.065, 0.022], ...detail);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
