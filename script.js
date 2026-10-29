@@ -147,9 +147,9 @@
         float speed = 0.035 * (1.0 + 0.02 * sin(float(index) * 1.7));
         float travel = clock * speed + float(index) * 0.001;
         float latitude = baseLatitude - travel;
-        // Ease paintings into the space pigment as each panel crosses a pole,
-        // hiding the change of tangent frame and preventing a visible pop.
-        return smoothstep(0.0, 0.28, abs(cos(latitude)));
+        // Fade each panel out as it approaches either pole, then ease it back
+        // in after crossing; the wider window hides the tangent-frame change.
+        return smoothstep(0.0, 0.34, abs(cos(latitude)));
       }
       void main() {
         float aspect = u_resolution.x / u_resolution.y;
