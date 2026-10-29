@@ -39,6 +39,7 @@
   let throneProgram;
   let throneRings = [];
   let throneEye;
+  let throneLid;
   let time = 0;
   let lastFrame = 0;
   let lastStamp = performance.now();
@@ -376,7 +377,7 @@
       const normalLength = Math.hypot(...normalRaw) || 1;
       const normal = normalRaw.map(value => value / normalLength);
       const position = [(radiusOnPlane + halfWidth * radial) * Math.cos(a), (radiusOnPlane + halfWidth * radial) * Math.sin(a), halfThickness * Math.sin(b)];
-      const engraved = 0.82 + 0.12 * (0.5 + 0.5 * Math.cos(a * 72.0)) + 0.06 * (0.5 + 0.5 * Math.cos(a * 18.0));
+      const engraved = 0.68 + 0.20 * (0.5 + 0.5 * Math.cos(a * 24.0)) + 0.12 * (0.5 + 0.5 * Math.cos(a * 72.0 + Math.sin(a * 24.0) * 1.8));
       return { position, normal, color: color.map(channel => channel * engraved) };
     }
     const triangle = (a, b, c) => {
@@ -389,6 +390,39 @@
         const a = point(u, v), b = point(u + 1, v), c = point(u + 1, v + 1), d = point(u, v + 1);
         triangle(a, b, c);
         triangle(a, c, d);
+      }
+    }
+  }
+
+  function appendBeltScroll(data, radius, halfWidth, halfThickness, offset, amplitude, waves, color, segments, sides) {
+    function point(u, v) {
+      const a = u / segments * Math.PI * 2;
+      const b = v / sides * Math.PI * 2;
+      const weave = offset + amplitude * Math.cos(a * waves);
+      const radial = radius + weave;
+      const z = halfThickness * Math.sqrt(Math.max(0.05, 1 - (weave / halfWidth) ** 2)) + 0.045;
+      const tangentX = -radial * Math.sin(a) - amplitude * waves * Math.sin(a * waves) * Math.cos(a);
+      const tangentY = radial * Math.cos(a) - amplitude * waves * Math.sin(a * waves) * Math.sin(a);
+      const tangentLength = Math.hypot(tangentX, tangentY) || 1;
+      const sideX = -tangentY / tangentLength;
+      const sideY = tangentX / tangentLength;
+      const radialTube = Math.cos(b);
+      const position = [radial * Math.cos(a) + sideX * 0.052 * radialTube,
+        radial * Math.sin(a) + sideY * 0.052 * radialTube,
+        z + 0.052 * Math.sin(b)];
+      const normal = [sideX * radialTube, sideY * radialTube, Math.sin(b)];
+      const modulation = 0.82 + 0.18 * (0.5 + 0.5 * Math.cos(a * waves * 2));
+      return { position, normal, color: color.map(channel => channel * modulation) };
+    }
+    for (let u = 0; u < segments; u += 1) {
+      for (let v = 0; v < sides; v += 1) {
+        const a = point(u, v), b = point(u + 1, v), c = point(u + 1, v + 1), d = point(u, v + 1);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, b.position, b.normal, b.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, a.position, a.normal, a.color);
+        appendMeshVertex(data, c.position, c.normal, c.color);
+        appendMeshVertex(data, d.position, d.normal, d.color);
       }
     }
   }
@@ -484,20 +518,23 @@
 
   function makeThroneRing(radiusOnPlane, eyeCount, compact) {
     const data = [];
-    const segments = compact ? 120 : 192;
-    const sides = compact ? 14 : 22;
-    const halfWidth = compact ? 1.45 : 1.7;
-    const halfThickness = compact ? 0.82 : 1.05;
-    // Broad, flattened metal bands with layered inner and outer rails.
-    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.50, 0.30, 0.12], segments, sides);
-    appendTorus(data, radiusOnPlane - halfWidth * 0.78, 0.11, [0.92, 0.68, 0.32], segments, sides);
-    appendTorus(data, radiusOnPlane + halfWidth * 0.78, 0.09, [0.24, 0.14, 0.055], segments, sides);
-    appendTorus(data, radiusOnPlane - halfWidth * 0.48, 0.035, [0.92, 0.70, 0.34], segments, Math.max(10, sides - 4));
-    appendTorus(data, radiusOnPlane + halfWidth * 0.48, 0.035, [0.60, 0.36, 0.13], segments, Math.max(10, sides - 4));
+    const segments = compact ? 144 : 224;
+    const sides = compact ? 12 : 18;
+    const halfWidth = compact ? 1.9 : 2.2;
+    const halfThickness = compact ? 0.22 : 0.28;
+    // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
+    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.17, 0.09, 0.028], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.62, 0.42, 0.18], segments, sides);
+    appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.48, 0.31, 0.12], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.36, 0.22, 0.085], segments, Math.max(10, sides - 2));
+    appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.36, 0.22, 0.085], segments, Math.max(10, sides - 2));
+    appendTorus(data, radiusOnPlane, 0.035, [0.72, 0.51, 0.23], segments, Math.max(10, sides - 2));
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.48, 0.30, 20, [0.42, 0.26, 0.095], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.48, 0.30, 20, [0.42, 0.26, 0.095], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-    return { buffer, count: data.length / 9, radius: radiusOnPlane, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth * 0.86 };
+    return { buffer, count: data.length / 9, radius: radiusOnPlane, bandHalfWidth: halfWidth, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth - 0.34 };
   }
 
   function makeThroneEye(compact) {
@@ -516,6 +553,24 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
     return { buffer, count: data.length / 9 };
+  }
+
+  function makeThroneLid(compact) {
+    const data = [];
+    const detail = compact ? [8, 12] : [12, 18];
+    appendEyeEllipsoid(data, [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.91, 0.61, 0.14], [0.38, 0.20, 0.085], ...detail);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9 };
+  }
+
+  function eyeBlinkAmount(t, ringIndex, eyeIndex) {
+    const seed = eyeIndex * 0.73 + ringIndex * 1.91;
+    const period = 3.3 + ((eyeIndex * 17 + ringIndex * 13) % 19) * 0.11;
+    const phase = (t + seed) % period;
+    const duration = 0.22;
+    return phase < duration ? Math.sin(Math.PI * phase / duration) : 0;
   }
 
   function matrixMultiply(a, b) {
@@ -594,7 +649,8 @@
     gl.useProgram(throneProgram);
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_light"), 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
-    const assemblyRotation = rotationMatrix(0.10, time * 0.022, -0.06);
+    // The artwork panels drift at 0.035 rad/s; throne movement stays much slower.
+    const assemblyRotation = rotationMatrix(0.10, time * 0.004, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
     const normalAttribute = gl.getAttribLocation(throneProgram, "a_normal");
@@ -613,8 +669,8 @@
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     };
     throneRings.forEach((ring, index) => {
-      const speed = [0.095, -0.073, 0.061][index];
-      const tilt = [[0.24, 0.10], [1.22, 0.48], [0.52, 1.18]][index];
+      const speed = [0.012, -0.010, 0.009][index];
+      const tilt = [[0.88, 0.28], [1.22, 0.48], [0.52, 1.18]][index];
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
       const model = matrixMultiply(ringRotation, scaleMatrix(1));
@@ -634,6 +690,19 @@
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
         const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
         drawMesh(throneEye, eyeFrame);
+        const blink = eyeBlinkAmount(time, index, eyeIndex);
+        if (blink > 0.015) {
+          const lidScale = 0.025 + 0.975 * blink;
+          const lidOffset = 0.56 * (1 - blink);
+          const lidCenter = eyeCenter.map((value, axis) => value + eyeUp[axis] * lidOffset + eyeNormal[axis] * 0.40);
+          const lidFrame = new Float32Array([
+            eyeRight[0], eyeRight[1], eyeRight[2], 0,
+            eyeUp[0] * lidScale, eyeUp[1] * lidScale, eyeUp[2] * lidScale, 0,
+            eyeNormal[0] * 0.35, eyeNormal[1] * 0.35, eyeNormal[2] * 0.35, 0,
+            lidCenter[0], lidCenter[1], lidCenter[2], 1
+          ]);
+          drawMesh(throneLid, lidFrame);
+        }
       }
     });
     gl.disable(gl.DEPTH_TEST);
@@ -718,6 +787,7 @@
         ? [makeThroneRing(19.5, 24, true), makeThroneRing(24.5, 20, true), makeThroneRing(29.5, 16, true)]
         : [makeThroneRing(19.5, 36, false), makeThroneRing(24.5, 30, false), makeThroneRing(29.5, 24, false)];
       throneEye = makeThroneEye(compactDevice);
+      throneLid = makeThroneLid(compactDevice);
       skyBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
