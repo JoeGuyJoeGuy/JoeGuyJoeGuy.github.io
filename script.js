@@ -325,9 +325,11 @@
         float diffuse = max(dot(normal, lightDirection), 0.0);
         float specular = pow(max(dot(reflect(-lightDirection, normal), viewDirection), 0.0), 34.0);
         float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
-        vec3 color = v_color * (0.52 + diffuse * 0.68);
-        color += vec3(1.0, 0.78, 0.42) * specular * 0.74;
-        color += vec3(0.42, 0.23, 0.08) * fresnel * 0.32;
+        // Keep the throne in the shadows behind the art. Tight, restrained
+        // highlights preserve the sculpted bronze without pulling focus.
+        vec3 color = v_color * (0.11 + diffuse * 0.19);
+        color += vec3(0.62, 0.39, 0.16) * specular * 0.07;
+        color += vec3(0.16, 0.085, 0.028) * fresnel * 0.035;
         gl_FragColor = vec4(color, 1.0);
       }
     `);
@@ -523,14 +525,14 @@
     const halfWidth = compact ? 1.9 : 2.2;
     const halfThickness = compact ? 0.22 : 0.28;
     // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
-    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.17, 0.09, 0.028], segments, sides);
-    appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.62, 0.42, 0.18], segments, sides);
-    appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.48, 0.31, 0.12], segments, sides);
-    appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.36, 0.22, 0.085], segments, Math.max(10, sides - 2));
-    appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.36, 0.22, 0.085], segments, Math.max(10, sides - 2));
-    appendTorus(data, radiusOnPlane, 0.035, [0.72, 0.51, 0.23], segments, Math.max(10, sides - 2));
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.48, 0.30, 20, [0.42, 0.26, 0.095], segments, 6);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.48, 0.30, 20, [0.42, 0.26, 0.095], segments, 6);
+    appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.12, 0.068, 0.026], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
+    appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.24, 0.13, 0.045], segments, sides);
+    appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
+    appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
+    appendTorus(data, radiusOnPlane, 0.035, [0.32, 0.21, 0.082], segments, Math.max(10, sides - 2));
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.48, 0.30, 20, [0.24, 0.14, 0.048], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.48, 0.30, 20, [0.24, 0.14, 0.048], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -539,10 +541,10 @@
 
   function makeThroneEye(compact) {
     const data = [];
-    const detail = compact ? [10, 14] : [16, 24];
+    const detail = compact ? [12, 18] : [20, 30];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
     appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.22, 0.12, 0.045], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.98, 0.93, 0.84], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.72, 0.68, 0.62], ...detail);
     appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data, compact);
     appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.155, 0.225, 0.065], [0.012, 0.009, 0.007], ...detail);
@@ -650,7 +652,7 @@
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_camera"), camera[0], camera[1], camera[2]);
     gl.uniform3f(gl.getUniformLocation(throneProgram, "u_light"), 4.0 + Math.cos(time * 0.08) * 3.0, 8.0, -6.0 + Math.sin(time * 0.08) * 3.0);
     // The artwork panels drift at 0.035 rad/s; throne movement stays much slower.
-    const assemblyRotation = rotationMatrix(0.10, time * 0.004, -0.06);
+    const assemblyRotation = rotationMatrix(0.10, time * 0.00045, -0.06);
     const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
     const positionAttribute = gl.getAttribLocation(throneProgram, "a_position");
     const normalAttribute = gl.getAttribLocation(throneProgram, "a_normal");
@@ -669,7 +671,7 @@
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
     };
     throneRings.forEach((ring, index) => {
-      const speed = [0.012, -0.010, 0.009][index];
+      const speed = [0.0012, -0.0010, 0.0009][index];
       const tilt = [[0.88, 0.28], [1.22, 0.48], [0.52, 1.18]][index];
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
