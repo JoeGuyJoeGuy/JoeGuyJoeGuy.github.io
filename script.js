@@ -57,10 +57,13 @@
   let throneEye;
   let throneLid;
   let seraphim;
+  let seraphCore;
   let seraphEye;
   let seraphApproachStart = null;
   let throneEyeTexture;
   let throneEyeTextureReady = false;
+  let seraphEyeTexture;
+  let seraphEyeTextureReady = false;
   let time = 0;
   let lastFrame = 0;
   let qualityScale = 1;
@@ -211,7 +214,7 @@
         vec3 normal = normalize(vec3(localPositionOnShell.x, localPositionOnShell.y / POD_Y, localPositionOnShell.z));
         if (u_render_layer < 0.5) {
           // A distant, continuous sky uses the paintings' colours as a restrained
-          // nebula. Two fixed star shells shift at different rates during flight.
+          // nebula. The distant stars shift gently during flight.
           vec3 spaceDirection = normalize(positionOnShell);
           vec3 pigmentA = texture2D(u_artwork, vec2(0.125, 0.833)).rgb;
           vec3 pigmentB = texture2D(u_artwork, vec2(0.375, 0.5)).rgb;
@@ -227,11 +230,8 @@
           vec3 color = vec3(0.010, 0.015, 0.038) + pigment * nebula * vec3(0.38, 0.30, 0.32);
           color += vec3(0.025, 0.018, 0.058) * nebula;
           vec3 farStars = normalize(ray + u_camera / u_sky_radius);
-          vec3 nearStars = normalize(ray + u_camera / 90.0);
           float fineStars = starField(farStars, 180.0, 7.0, 0.935);
-          float nearStar = starField(nearStars, 105.0, 23.0, 0.978);
           color += vec3(0.64, 0.72, 0.88) * fineStars * 0.65;
-          color += vec3(0.88, 0.70, 0.52) * nearStar * 0.85;
           vec3 insideNormal = -normal;
           vec3 keyDirection = normalize(vec3(cos(u_time * 0.055), 0.58 + 0.08 * sin(u_time * 0.07), sin(u_time * 0.055)));
           float key = max(dot(insideNormal, keyDirection), 0.0);
@@ -342,17 +342,45 @@
       attribute vec3 a_color;
       uniform mat4 u_mvp;
       uniform mat4 u_model;
+      uniform mat4 u_view_projection;
+      uniform float u_seraph_wrap;
+      uniform float u_seraph_eye_wrap;
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
       varying vec3 v_local;
       void main() {
         vec4 world = u_model * vec4(a_position, 1.0);
+        if (u_seraph_wrap > 0.001) {
+          vec3 right = normalize(u_model[0].xyz);
+          vec3 up = normalize(u_model[1].xyz);
+          vec3 inward = normalize(u_model[2].xyz);
+          float longitude = clamp(a_position.x / 30.0, -1.0, 1.0) * 2.85;
+          float latitude = clamp(a_position.y / 24.0, -1.0, 1.0) * 1.48;
+          vec3 wrappedDirection = normalize(right * sin(longitude) * cos(latitude)
+            + up * sin(latitude) - inward * cos(longitude) * cos(latitude));
+          vec3 startDirection = normalize(world.xyz);
+          vec3 blendedDirection = normalize(mix(startDirection, wrappedDirection, u_seraph_wrap));
+          float radius = mix(length(world.xyz), 70.0 + a_position.z, u_seraph_wrap);
+          world = vec4(blendedDirection * radius, 1.0);
+        } else if (u_seraph_eye_wrap > 0.001) {
+          vec3 right = normalize(u_model[0].xyz);
+          vec3 up = normalize(u_model[1].xyz);
+          vec3 inward = normalize(u_model[2].xyz);
+          float longitude = clamp(a_position.x / 1.14, -1.2, 1.2) * 0.92;
+          float latitude = clamp(a_position.y / 1.02, -1.2, 1.2) * 0.72;
+          vec3 wrappedDirection = normalize(right * sin(longitude) * cos(latitude)
+            + up * sin(latitude) - inward * cos(longitude) * cos(latitude));
+          vec3 blendedDirection = normalize(mix(normalize(world.xyz), wrappedDirection, u_seraph_eye_wrap));
+          float radius = mix(length(world.xyz), 61.0 - a_position.z * 4.0, u_seraph_eye_wrap);
+          world = vec4(blendedDirection * radius, 1.0);
+        }
         v_world = world.xyz;
         v_normal = normalize(mat3(u_model) * a_normal);
         v_color = a_color;
         v_local = a_position;
-        gl_Position = u_mvp * vec4(a_position, 1.0);
+        gl_Position = max(u_seraph_wrap, u_seraph_eye_wrap) > 0.001
+          ? u_view_projection * world : u_mvp * vec4(a_position, 1.0);
       }
     `);
     const fragment = createShader(gl.FRAGMENT_SHADER, `
@@ -364,6 +392,7 @@
       uniform float u_band_half_width;
       uniform sampler2D u_eye_texture;
       uniform float u_eye_texture_ready;
+      uniform float u_eye_uv_scale;
       varying vec3 v_normal;
       varying vec3 v_world;
       varying vec3 v_color;
@@ -437,7 +466,10 @@
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         if (u_eye_texture_ready > 0.5 && u_ring_radius == 0.0 && v_local.z > 0.04) {
-          vec2 eyeUv = v_local.xy / vec2(2.28, 2.04) + 0.5;
+          vec2 eyeUv = v_local.xy / vec2(2.28, 2.04) * u_eye_uv_scale + 0.5;
+          // Mirror the outer sclera for the larger texture rather than
+          // stretching its edge into visible streaks at the socket.
+          if (u_eye_uv_scale > 1.01) eyeUv = 1.0 - abs(mod(eyeUv, 2.0) - 1.0);
           vec3 referenceEye = texture2D(u_eye_texture, clamp(eyeUv, 0.0, 1.0)).rgb;
           float referenceMask = max(eyeSurface, irisDetail) * (1.0 - smoothstep(0.94, 1.0, eyeRadius));
           color = mix(color, referenceEye * 1.05, referenceMask * 0.92);
@@ -977,12 +1009,13 @@
     appendEyeIris(data, compact, textureDetailOnly);
     const ringSegments = compact ? 48 : 112;
     const ringSides = compact ? 4 : 6;
-    appendEyeDetailRing(data, 0.497, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
-    appendEyeDetailRing(data, 0.385, 0.009, 0.413, [0.34, 0.13, 0.025], ringSegments, ringSides);
-    appendEyeDetailRing(data, 0.21, 0.010, 0.446, [0.13, 0.065, 0.018], ringSegments, ringSides);
+    if (!textureDetailOnly) {
+      appendEyeDetailRing(data, 0.497, 0.016, 0.394, [0.035, 0.017, 0.006], ringSegments, ringSides);
+      appendEyeDetailRing(data, 0.385, 0.009, 0.413, [0.34, 0.13, 0.025], ringSegments, ringSides);
+      appendEyeDetailRing(data, 0.21, 0.010, 0.446, [0.13, 0.065, 0.018], ringSegments, ringSides);
+      appendEyeDetailRing(data, 0.465, 0.012, 0.411, [0.055, 0.025, 0.008], ringSegments, ringSides);
+    }
     appendEyeEllipsoid(data, [0, 0, 0.445], x, y, z, [0.155, 0.155, 0.035], [0.006, 0.004, 0.003], ...detail);
-    // Subtle limbal depth and a small lower iris catchlight add wet, optical depth without glowing.
-    appendEyeDetailRing(data, 0.465, 0.012, 0.411, [0.055, 0.025, 0.008], ringSegments, ringSides);
     // Two restrained corneal reflections sit high on the iris, like wet studio catchlights.
     appendEyeEllipsoid(data, [0.045, -0.035, 0.49], x, y, z, [0.026, 0.032, 0.005], [0.94, 0.89, 0.78], ...detail);
     appendEyeEllipsoid(data, [0.21, -0.035, 0.454], x, y, z, [0.020, 0.024, 0.008], [0.58, 0.55, 0.48], ...detail);
@@ -1027,11 +1060,7 @@
   function makeSeraphim(compact) {
     const data = [];
     const segments = compact ? 5 : 10;
-    const detail = compact ? [10, 14] : [18, 26];
-    const xAxis = [1, 0, 0], yAxis = [0, 1, 0], zAxis = [0, 0, 1];
-    // The core and all six wings share one static mesh and one draw call.
-    appendEyeEllipsoid(data, [0, 0, 0], xAxis, yAxis, zAxis,
-      [4.3, 4.8, 1.55], [0.25, 0.14, 0.055], ...detail);
+    // The six wings share one static mesh and one draw call.
     function feather(root, direction, length, width, shade) {
       const perpendicular = [-direction[1], direction[0]];
       function vertex(t, side) {
@@ -1073,6 +1102,16 @@
         }
       }
     }
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9 };
+  }
+
+  function makeSeraphCore(compact) {
+    const data = [];
+    appendEyeEllipsoid(data, [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1],
+      [4.3, 4.8, 1.55], [0.25, 0.14, 0.055], ...(compact ? [10, 14] : [18, 26]));
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -1212,6 +1251,11 @@
     ]);
   }
 
+  function seraphProgress() {
+    if (seraphApproachStart === null) return 0;
+    return Math.min(1, Math.max(0, (time - seraphApproachStart) / 120));
+  }
+
   function drawThrone() {
     if (!experienceStarted || dialog.open || !throneProgram) return;
     const dirs = basis();
@@ -1224,6 +1268,7 @@
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(throneProgram);
+    gl.uniformMatrix4fv(throneLocations.viewProjection, false, matrixMultiply(projection, view));
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
     gl.uniform1i(throneLocations.eyeTexture, 1);
@@ -1238,7 +1283,7 @@
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
-    const drawMesh = (mesh, model, renderGain = 1, ringRadius = 0, bandHalfWidth = 0) => {
+    const drawMesh = (mesh, model, renderGain = 1, ringRadius = 0, bandHalfWidth = 0, seraphWrap = 0, eyeUvScale = 1, eyeWrap = 0) => {
       const mvp = matrixMultiply(projection, matrixMultiply(view, model));
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
@@ -1247,6 +1292,9 @@
       gl.uniform1f(throneLocations.renderGain, renderGain);
       gl.uniform1f(throneLocations.ringRadius, ringRadius);
       gl.uniform1f(throneLocations.bandHalfWidth, bandHalfWidth);
+      gl.uniform1f(throneLocations.seraphWrap, seraphWrap);
+      gl.uniform1f(throneLocations.seraphEyeWrap, eyeWrap);
+      gl.uniform1f(throneLocations.eyeUvScale, eyeUvScale);
       gl.uniformMatrix4fv(throneLocations.model, false, model);
       gl.uniformMatrix4fv(throneLocations.mvp, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
@@ -1305,8 +1353,7 @@
     // The seraphim orbits beyond all three rings and stays within the skybox.
     // Its inward-facing frame keeps the central eye fixed on the viewer.
     const orbit = 0.22 + time * 0.0035;
-    if (seraphApproachStart === null) seraphApproachStart = time;
-    const approach = Math.min(1, Math.max(0, (time - seraphApproachStart) / 120));
+    const approach = seraphProgress();
     const easedApproach = approach * approach * (3 - 2 * approach);
     // Even with the camera at its furthest flight limit, this radius leaves
     // clearance between the closest part of the eye and the outer ring.
@@ -1331,15 +1378,26 @@
         seraphNormal[2] * right[0] - seraphNormal[0] * right[2],
         seraphNormal[0] * right[1] - seraphNormal[1] * right[0]];
       const frame = throneFrame(seraphPosition, right, up, seraphNormal);
-      drawMesh(seraphim, matrixMultiply(frame, scaleMatrix(12.0)), 1.45);
+      // Keep Throne's depth while allowing the eye to sit in front of the wings.
+      gl.depthMask(false);
+      drawMesh(seraphim, matrixMultiply(frame, scaleMatrix(12.0)), 1.45, 0, 0, easedApproach);
+      gl.depthMask(true);
+      const coreScale = Math.max(0, 1 - Math.max(0, (easedApproach - 0.45) / 0.55));
+      if (coreScale > 0.005) drawMesh(seraphCore, matrixMultiply(frame, scaleMatrix(12.0 * coreScale)), 1.45);
       const eyePosition = seraphPosition.map((value, axis) => value + seraphNormal[axis] * 39.6);
       const eyeFrame = throneFrame(eyePosition, right, up, seraphNormal);
       const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(36.0));
-      drawMesh(seraphEye, eyeModel, 0.50);
+      if (seraphEyeTextureReady) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, seraphEyeTexture);
+        gl.uniform1f(throneLocations.eyeTextureReady, 1);
+        gl.activeTexture(gl.TEXTURE0);
+      }
+      drawMesh(seraphEye, eyeModel, 0.50, 0, 0, 0, seraphEyeTextureReady ? 1.4 : 1, easedApproach);
       const blink = eyeBlinkAmount(time, 9, 0);
       if (blink > 0.015) {
         updateThroneLid(throneLid, blink);
-        drawMesh(throneLid, eyeModel, 0.50);
+        drawMesh(throneLid, eyeModel, 0.50, 0, 0, 0, 1, easedApproach);
       }
     }
     gl.disable(gl.DEPTH_TEST);
@@ -1438,8 +1496,12 @@
         renderGain: gl.getUniformLocation(throneProgram, "u_render_gain"),
         ringRadius: gl.getUniformLocation(throneProgram, "u_ring_radius"),
         bandHalfWidth: gl.getUniformLocation(throneProgram, "u_band_half_width"),
+        seraphWrap: gl.getUniformLocation(throneProgram, "u_seraph_wrap"),
+        seraphEyeWrap: gl.getUniformLocation(throneProgram, "u_seraph_eye_wrap"),
+        viewProjection: gl.getUniformLocation(throneProgram, "u_view_projection"),
         eyeTexture: gl.getUniformLocation(throneProgram, "u_eye_texture"),
         eyeTextureReady: gl.getUniformLocation(throneProgram, "u_eye_texture_ready"),
+        eyeUvScale: gl.getUniformLocation(throneProgram, "u_eye_uv_scale"),
         model: gl.getUniformLocation(throneProgram, "u_model"),
         mvp: gl.getUniformLocation(throneProgram, "u_mvp"),
         position: gl.getAttribLocation(throneProgram, "a_position"),
@@ -1453,6 +1515,7 @@
       seraphEye = makeThroneEye(compactDevice, true);
       throneLid = makeThroneLid(compactDevice);
       seraphim = makeSeraphim(compactDevice);
+      seraphCore = makeSeraphCore(compactDevice);
       throneEyeTexture = gl.createTexture();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
@@ -1477,6 +1540,31 @@
         detail.height = 1;
       };
       reference.src = "artwork/reference/throne.png";
+      seraphEyeTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, seraphEyeTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 100, 96, 255]));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const highResolutionEye = new Image();
+      highResolutionEye.onload = () => {
+        const detail = document.createElement("canvas");
+        const size = compactDevice ? 768 : 1254;
+        detail.width = size;
+        detail.height = size;
+        detail.getContext("2d").drawImage(highResolutionEye, 0, 0, size, size);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, seraphEyeTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, detail);
+        gl.activeTexture(gl.TEXTURE0);
+        seraphEyeTextureReady = true;
+        detail.width = 1;
+        detail.height = 1;
+      };
+      highResolutionEye.src = "artwork/reference/seraph-eye-hd.png";
       gl.activeTexture(gl.TEXTURE0);
       skyBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
@@ -1616,6 +1704,7 @@
     const delta = Math.min((now - lastFrame) / 1000 || 0, 0.04);
     lastFrame = now;
     time += delta;
+    if (experienceStarted && seraphApproachStart === null) seraphApproachStart = time;
     moveCamera(delta);
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
