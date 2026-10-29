@@ -38,7 +38,7 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--amber); outline
 .entry.leaving { opacity: 0; visibility: hidden; pointer-events: none; }
 .entry-copy { width: min(740px, 82vw); }
 .entry-eyebrow { display: flex; justify-content: space-between; padding-bottom: 15px; border-bottom: 1px solid var(--line); color: #ddd1bf; font: 9px var(--mono); letter-spacing: .12em; }
-.entry h1 { margin: 22px 0 10px -.075em; font-size: clamp(6rem, 17vw, 15.5rem); font-weight: 500; letter-spacing: -.115em; line-height: .72; }
+.entry h1 { margin: 22px 0 10px -.075em; font-size: clamp(6rem, 17vw, 15.5rem); font-weight: 500; letter-spacing: -.025em; line-height: .72; }
 .entry h1 em { color: var(--amber); font-style: normal; }
 .entry-note { margin: 25px 0 27px; color: #ddd4c8; font-size: clamp(14px, 1.3vw, 17px); font-weight: 300; letter-spacing: .01em; }
 .enter { display: flex; align-items: center; gap: 50px; padding: 15px 17px 15px 0; border: 0; border-top: 1px solid rgb(240 222 193 / .65); border-bottom: 1px solid rgb(240 222 193 / .65); background: none; color: var(--ink); font: 10px var(--mono); letter-spacing: .14em; transition: gap .25s, color .25s; }
