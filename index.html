@@ -31,13 +31,13 @@
   </section>
 
   <div class="controls" id="controls" aria-label="Flight controls" hidden>
-    <div class="control-cluster">
-      <button type="button" data-move="forward" aria-label="Fly forward">↑</button>
-      <div><button type="button" data-move="left" aria-label="Fly left">←</button><button type="button" data-move="back" aria-label="Fly backward">↓</button><button type="button" data-move="right" aria-label="Fly right">→</button></div>
+      <div class="control-cluster" aria-label="Flight directions">
+        <div><button type="button" data-flight-key="q" aria-label="Fly down, Q">Q↓</button><button type="button" data-move="forward" aria-label="Fly forward">↑</button><button type="button" data-flight-key="e" aria-label="Fly up, E">E↑</button></div>
+        <div><button type="button" data-move="left" aria-label="Fly left">←</button><button type="button" data-move="back" aria-label="Fly backward">↓</button><button type="button" data-move="right" aria-label="Fly right">→</button></div>
     </div>
     <span>FLIGHT</span>
   </div>
-  <div class="world-hint" id="world-hint" hidden><span class="hint-dot"></span>DRAG TO LOOK <i>·</i> WASD TO FLY <i>·</i> CLICK A WORK TO INSPECT</div>
+  <div class="world-hint" id="world-hint" hidden><span class="hint-dot"></span>DRAG TO LOOK <i>·</i> WASD TO FLY <i class="hint-inspect-separator">·</i><span class="hint-inspect">CLICK A WORK TO INSPECT</span></div>
   <div class="position" id="position" hidden><span>POSITION</span><span id="position-value">CENTRE</span></div>
 
   <dialog class="art-viewer" id="art-viewer" aria-label="Full-size painting viewer">
