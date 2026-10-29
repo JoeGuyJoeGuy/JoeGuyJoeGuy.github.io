@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#11100e">
   <meta name="description" content="A continuous, immersive world of abstract paintings by Joe Guy.">
   <title>Joe Guy — Inside the Sphere</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=sky-105" defer></script>
+  <link rel="stylesheet" href="styles.css?v=sky-106">
+  <script src="script.js?v=sky-106" defer></script>
 </head>
 <body>
   <audio id="background-music" src="audio/yung-leion2.wav" preload="none" loop></audio>
   <canvas id="sky" aria-label="A 360 degree abstract painted world. Drag to look around and click a painting to view it in full size."></canvas>
-  <div class="loading" id="loading"><span class="loading-mark"></span><span>BUILDING THE WORLD</span><span class="loading-value">00%</span></div>
+  <div class="experience-error" id="experience-error" role="status" aria-live="polite" hidden></div>
 
   <header class="hud">
     <a class="identity" href="#entry" aria-label="Return to splash page"><span class="identity-name">JOE GUY</span><span class="identity-rule"></span><span class="identity-label">ABSTRACT ARTIST</span></a>
