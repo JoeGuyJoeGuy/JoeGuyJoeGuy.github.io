@@ -327,8 +327,10 @@
         float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
-        vec3 color = v_color * (0.11 + diffuse * 0.19);
-        color += vec3(0.52, 0.31, 0.12) * specular * 0.025;
+        float eyeSurface = smoothstep(0.34, 0.50, v_color.r) * smoothstep(0.30, 0.46, v_color.g);
+        vec3 color = v_color * (0.16 + diffuse * 0.22);
+        color += vec3(0.36, 0.30, 0.22) * specular * 0.16 * eyeSurface;
+        color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
         gl_FragColor = vec4(color, 1.0);
       }
@@ -461,13 +463,13 @@
   function appendEyeIris(data, compact) {
     const spokes = compact ? 96 : 144;
     const bands = compact ? 7 : 10;
-    const innerRadius = 0.15;
-    const outerRadius = 0.34;
+    const innerRadius = 0.17;
+    const outerRadius = 0.42;
     function vertex(radius, angle) {
       const fiber = 0.5 + 0.5 * Math.sin(angle * 71.0 + Math.sin(angle * 9.0) * 1.8 + radius * 33.0);
       const crypt = 0.5 + 0.5 * Math.sin(angle * 19.0 + radius * 52.0);
-      const color = [0.10 + fiber * 0.11 + crypt * 0.025, 0.04 + fiber * 0.055 + crypt * 0.012, 0.012 + fiber * 0.021];
-      const z = 0.36 + 0.10 * (1.0 - radius / outerRadius);
+      const color = [0.20 + fiber * 0.16 + crypt * 0.035, 0.082 + fiber * 0.090 + crypt * 0.018, 0.024 + fiber * 0.035 + crypt * 0.008];
+      const z = 0.38 + 0.11 * (1.0 - radius / outerRadius);
       return { position: [Math.cos(angle) * radius, Math.sin(angle) * radius * 0.9, z], normal: [0, 0, 1], color };
     }
     for (let band = 0; band < bands; band += 1) {
@@ -518,10 +520,10 @@
     const points = [];
     for (let i = 0; i <= segments; i += 1) {
       const t = i / segments;
-      const x = side * (0.84 - 0.48 * t);
-      const y = branch * (0.025 + 0.155 * t) + Math.sin(t * Math.PI * 3 + side) * 0.012 * t;
-      const surface = Math.max(0.02, 1 - (x / 0.90) ** 2 - (y / 0.60) ** 2);
-      points.push([x, y, 0.35 * Math.sqrt(surface) + 0.009]);
+      const x = side * (1.25 - 0.69 * t);
+      const y = branch * (0.04 + 0.22 * t) + Math.sin(t * Math.PI * 3 + side) * 0.016 * t;
+      const surface = Math.max(0.02, 1 - (x / 1.34) ** 2 - (y / 0.89) ** 2);
+      points.push([x, y, 0.44 * Math.sqrt(surface) + 0.009]);
     }
     for (let i = 0; i < segments; i += 1) {
       const previous = points[Math.max(0, i - 1)], next = points[Math.min(segments, i + 1)];
@@ -533,7 +535,7 @@
         const radial = Math.cos(angle);
         return {
           position: [point[0] + nx * 0.005 * radial, point[1] + ny * 0.005 * radial, point[2] + 0.005 * Math.sin(angle)],
-          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.095, 0.018, 0.014]
+          normal: [nx * radial, ny * radial, Math.sin(angle)], color: [0.15, 0.032, 0.024]
         };
       };
       for (let s = 0; s < tubeSides; s += 1) {
@@ -551,20 +553,21 @@
   function appendEyeLidArc(data, start, end, upper, compact) {
     const segments = compact ? 24 : 36;
     const sides = compact ? 6 : 8;
-    const tubeRadius = 0.105;
+    const tubeRadius = 0.14;
     function point(segment, side) {
       const angle = start + (end - start) * segment / segments;
       const sideAngle = side / sides * Math.PI * 2;
       const radial = Math.cos(sideAngle);
-      const centerX = 0.84 * Math.cos(angle);
-      const centerY = 0.55 * Math.sin(angle);
-      const raised = (upper ? 1 : -1) * 0.035;
+      const centerX = 1.18 * Math.cos(angle);
+      const centerY = 0.78 * Math.sin(angle);
+      const raised = (upper ? 1 : -1) * 0.045;
+      const surfaceDepth = 0.44 * Math.sqrt(Math.max(0.03, 1 - (centerX / 1.34) ** 2 - (centerY / 0.89) ** 2));
       const position = [centerX + Math.cos(angle) * tubeRadius * radial,
         centerY + Math.sin(angle) * tubeRadius * radial,
-        0.18 + raised + tubeRadius * Math.sin(sideAngle)];
+        surfaceDepth + 0.035 + raised + tubeRadius * Math.sin(sideAngle)];
       const normalRaw = [Math.cos(angle) * radial, Math.sin(angle) * radial, Math.sin(sideAngle)];
       const length = Math.hypot(...normalRaw) || 1;
-      const color = upper ? [0.09, 0.045, 0.016] : [0.13, 0.065, 0.022];
+      const color = upper ? [0.115, 0.055, 0.024] : [0.15, 0.078, 0.034];
       return { position, normal: normalRaw.map(value => value / length), color };
     }
     for (let segment = 0; segment < segments; segment += 1) {
@@ -584,8 +587,8 @@
     const data = [];
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
-    const halfWidth = compact ? 2.3 : 2.45;
-    const halfThickness = compact ? 0.30 : 0.36;
+    const halfWidth = compact ? 5.8 : 6.2;
+    const halfThickness = compact ? 0.82 : 0.90;
     // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.12, 0.068, 0.026], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
@@ -593,26 +596,28 @@
     appendTorus(data, radiusOnPlane - halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane + halfWidth * 0.57, 0.045, [0.18, 0.10, 0.034], segments, Math.max(10, sides - 2));
     appendTorus(data, radiusOnPlane, 0.035, [0.32, 0.21, 0.082], segments, Math.max(10, sides - 2));
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -0.60, 0.40, 20, [0.24, 0.14, 0.048], segments, 6);
-    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 0.60, 0.40, 20, [0.24, 0.14, 0.048], segments, 6);
+    const scrollCount = Math.round(radiusOnPlane * 0.64);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.85, 1.20, scrollCount, [0.29, 0.17, 0.06], segments, 6);
+    appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.85, 1.20, scrollCount, [0.29, 0.17, 0.06], segments, 6);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-    return { buffer, count: data.length / 9, radius: radiusOnPlane, bandHalfWidth: halfWidth, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth - 0.34 };
+    // Eyes are mounted right at the belt's inner rim, facing into the painting sphere.
+    return { buffer, count: data.length / 9, radius: radiusOnPlane, bandHalfWidth: halfWidth, eyeCount, innerEyeRadius: radiusOnPlane - halfWidth + 0.35 };
   }
 
   function makeThroneEye(compact) {
     const data = [];
-    const detail = compact ? [12, 18] : [20, 30];
+    const detail = compact ? [14, 22] : [24, 36];
     const x = [1, 0, 0], y = [0, 1, 0], z = [0, 0, 1];
-    appendEyeEllipsoid(data, [0, 0, -0.13], x, y, z, [1.02, 0.72, 0.27], [0.08, 0.04, 0.014], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [0.90, 0.60, 0.35], [0.40, 0.36, 0.32], ...detail);
-    appendEyeEllipsoid(data, [0, 0, 0.19], x, y, z, [0.37, 0.35, 0.105], [0.13, 0.055, 0.018], ...detail);
+    appendEyeEllipsoid(data, [0, 0, -0.16], x, y, z, [1.55, 1.08, 0.36], [0.08, 0.04, 0.014], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.34, 0.89, 0.44], [0.54, 0.49, 0.39], ...detail);
+    appendEyeEllipsoid(data, [0, 0, 0.22], x, y, z, [0.56, 0.52, 0.14], [0.13, 0.055, 0.018], ...detail);
     appendEyeIris(data, compact);
-    appendEyeDetailRing(data, 0.337, 0.012, 0.361, [0.035, 0.017, 0.006]);
-    appendEyeDetailRing(data, 0.166, 0.008, 0.417, [0.13, 0.065, 0.018]);
-    appendEyeEllipsoid(data, [0, 0, 0.43], x, y, z, [0.17, 0.17, 0.065], [0.008, 0.005, 0.003], ...detail);
-    appendEyeEllipsoid(data, [-0.09, 0.10, 0.482], x, y, z, [0.044, 0.052, 0.020], [0.33, 0.28, 0.21], ...detail);
+    appendEyeDetailRing(data, 0.466, 0.016, 0.40, [0.035, 0.017, 0.006]);
+    appendEyeDetailRing(data, 0.21, 0.010, 0.465, [0.13, 0.065, 0.018]);
+    appendEyeEllipsoid(data, [0, 0, 0.49], x, y, z, [0.18, 0.18, 0.068], [0.006, 0.004, 0.003], ...detail);
+    appendEyeEllipsoid(data, [-0.13, 0.14, 0.55], x, y, z, [0.058, 0.067, 0.026], [0.42, 0.34, 0.21], ...detail);
     appendEyeVessel(data, -1, -1, compact);
     appendEyeVessel(data, -1, 1, compact);
     appendEyeVessel(data, 1, -1, compact);
@@ -635,15 +640,15 @@
   function updateThroneLid(mesh, closure) {
     const rows = mesh.compact ? 10 : 16;
     const columns = mesh.compact ? 18 : 28;
-    const lowerY = 0.60 - closure * 1.20;
+    const lowerY = 0.89 - closure * 1.78;
     const data = [];
     function vertex(row, column) {
       const v = row / rows;
-      const y = 0.60 + (lowerY - 0.60) * v;
-      const halfWidth = 0.90 * Math.sqrt(Math.max(0, 1 - (y / 0.60) ** 2));
+      const y = 0.89 + (lowerY - 0.89) * v;
+      const halfWidth = 1.34 * Math.sqrt(Math.max(0, 1 - (y / 0.89) ** 2));
       const x = ((column / columns) * 2 - 1) * halfWidth;
-      const depth = 0.35 * Math.sqrt(Math.max(0.012, 1 - (x / 0.90) ** 2 - (y / 0.60) ** 2)) + 0.012;
-      const normalRaw = [x / (0.90 * 0.90), y / (0.60 * 0.60), depth / (0.35 * 0.35)];
+      const depth = 0.44 * Math.sqrt(Math.max(0.012, 1 - (x / 1.34) ** 2 - (y / 0.89) ** 2)) + 0.012;
+      const normalRaw = [x / (1.34 * 1.34), y / (0.89 * 0.89), depth / (0.44 * 0.44)];
       const normalLength = Math.hypot(...normalRaw) || 1;
       const shade = 0.88 + 0.12 * (1 - v);
       return { position: [x, y, depth], normal: normalRaw.map(value => value / normalLength), color: [0.22 * shade, 0.12 * shade, 0.065 * shade] };
@@ -769,7 +774,7 @@
     };
     throneRings.forEach((ring, index) => {
       const speed = [0.0012, -0.0010, 0.0009][index];
-      const tilt = [[0.88, 0.28], [1.22, 0.48], [0.52, 1.18]][index];
+      const tilt = [[1.48, 0.00], [1.48, 1.05], [1.34, -1.05]][index];
       const localRotation = rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7);
       const ringRotation = matrixMultiply(assemblyRotation, localRotation);
       const model = matrixMultiply(ringRotation, scaleMatrix(1));
@@ -782,17 +787,21 @@
         const towardCamera = camera.map((value, axis) => value - eyeCenter[axis]);
         const eyeLength = Math.hypot(...towardCamera) || 1;
         const eyeNormal = towardCamera.map(value => value / eyeLength);
+        // Set the eye well inside the belt's opening so its body clears the inner rim.
+        eyeCenter.forEach((value, axis) => { eyeCenter[axis] = value + eyeNormal[axis] * 1.25; });
         let eyeRight = [eyeNormal[1] * worldUp[2] - eyeNormal[2] * worldUp[1], eyeNormal[2] * worldUp[0] - eyeNormal[0] * worldUp[2], eyeNormal[0] * worldUp[1] - eyeNormal[1] * worldUp[0]];
         if (Math.hypot(...eyeRight) < 0.001) eyeRight = [1, 0, 0];
         const rightLength = Math.hypot(...eyeRight);
         eyeRight = eyeRight.map(value => value / rightLength);
         const eyeUp = [eyeNormal[1] * eyeRight[2] - eyeNormal[2] * eyeRight[1], eyeNormal[2] * eyeRight[0] - eyeNormal[0] * eyeRight[2], eyeNormal[0] * eyeRight[1] - eyeNormal[1] * eyeRight[0]];
         const eyeFrame = throneFrame(eyeCenter, eyeRight, eyeUp, eyeNormal);
-        drawMesh(throneEye, eyeFrame);
+        const eyeScale = 0.955 + 0.09 * (0.5 + 0.5 * Math.sin(eyeIndex * 2.39 + index * 1.47));
+        const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(eyeScale));
+        drawMesh(throneEye, eyeModel);
         const blink = eyeBlinkAmount(time, index, eyeIndex);
         if (blink > 0.015) {
           updateThroneLid(throneLid, blink);
-          drawMesh(throneLid, eyeFrame);
+          drawMesh(throneLid, eyeModel);
         }
       }
     });
@@ -875,8 +884,8 @@
       gl.useProgram(program);
       throneProgram = createThroneProgram();
       throneRings = compactDevice
-        ? [makeThroneRing(19.5, 24, true), makeThroneRing(24.5, 20, true), makeThroneRing(29.5, 16, true)]
-        : [makeThroneRing(19.5, 36, false), makeThroneRing(24.5, 30, false), makeThroneRing(29.5, 24, false)];
+        ? [makeThroneRing(24, 28, true), makeThroneRing(34, 24, true), makeThroneRing(44, 20, true)]
+        : [makeThroneRing(24, 44, false), makeThroneRing(34, 38, false), makeThroneRing(44, 32, false)];
       throneEye = makeThroneEye(compactDevice);
       throneLid = makeThroneLid(compactDevice);
       skyBuffer = gl.createBuffer();
