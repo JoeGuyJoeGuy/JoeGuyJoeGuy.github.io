@@ -27,6 +27,7 @@
   const dialogImage = document.getElementById("viewer-image");
   const dialogIndex = document.getElementById("viewer-index");
   const stage = document.getElementById("viewer-stage");
+  const viewerFrame = document.getElementById("viewer-image-frame");
   const zoomOutButton = document.getElementById("zoom-out");
   const zoomInButton = document.getElementById("zoom-in");
   const zoomValue = document.getElementById("zoom-value");
@@ -384,7 +385,7 @@
             * cos(v_local.y * 5.0 - v_local.x * 3.0);
         }
         vec3 color = v_color * (0.16 + diffuse * 0.22);
-        color += vec3(0.32, 0.27, 0.24) * eyeSurface;
+        color += vec3(0.30, 0.235, 0.245) * eyeSurface;
         color += vec3(0.010, 0.006, 0.006) * scleraGrain * scleraSurface;
         color += vec3(0.010, 0.003, 0.001) * scleraBloom * scleraSurface;
         color += vec3(0.105, 0.052, 0.010) * irisSurface;
@@ -878,8 +879,8 @@
     const segments = compact ? 144 : 224;
     const sides = compact ? 12 : 18;
     const halfWidth = compact ? 8.7 : 9.3;
-    const halfThickness = compact ? 0.82 : 0.90;
-    // Flat, ribbon-wide bronze with raised borders and braided rococo scrolls.
+    const halfThickness = compact ? 1.35 : 1.45;
+    // Broad ribbon faces sit just wider than the eyes, with raised borders and braided rococo scrolls.
     appendTorusBelt(data, radiusOnPlane, halfWidth, halfThickness, [0.14, 0.076, 0.029], segments, sides);
     appendTorus(data, radiusOnPlane - halfWidth * 0.91, 0.075, [0.30, 0.18, 0.065], segments, sides);
     appendTorus(data, radiusOnPlane + halfWidth * 0.91, 0.075, [0.24, 0.13, 0.045], segments, sides);
@@ -927,10 +928,10 @@
       const limbusDelta = (Math.hypot(unit[0], unit[1]) - 0.49) / 0.085;
       const limbus = Math.exp(-(limbusDelta * limbusDelta)) * front;
       const grain = (Math.sin(unit[0] * 43 + unit[1] * 19) + Math.sin(unit[0] * 71 - unit[1] * 31)) * 0.008 * front;
-      // Dusty blush sclera, with restrained warmth at the limbus and corners.
-      return [0.72 + edge * 0.035 + lowerFlush * 0.050 + cornerFlush * 0.035 + limbus * 0.018 + grain,
-        0.65 - edge * 0.014 - lowerFlush * 0.018 - cornerFlush * 0.006 + grain * 0.30,
-        0.63 - edge * 0.018 - lowerFlush * 0.013 - cornerFlush * 0.004 - limbus * 0.010 + grain * 0.22];
+      // Muted rose-pink sclera, with restrained warmth at the limbus and corners.
+      return [0.78 + edge * 0.035 + lowerFlush * 0.050 + cornerFlush * 0.035 + limbus * 0.018 + grain,
+        0.63 - edge * 0.014 - lowerFlush * 0.018 - cornerFlush * 0.006 + grain * 0.30,
+        0.65 - edge * 0.018 - lowerFlush * 0.013 - cornerFlush * 0.004 - limbus * 0.010 + grain * 0.22];
     };
     appendEyeEllipsoid(data, [0, 0, 0], x, y, z, [1.14, 1.02, 0.42], scleraColor, ...detail);
     appendEyeIris(data, compact);
@@ -1568,12 +1569,14 @@
     currentWork = (index + 12) % 12;
     zoomFactor = 1;
     stage.classList.remove("zoomed");
+    viewerFrame.style.width = "";
+    viewerFrame.style.height = "";
+    viewerFrame.classList.toggle("rotated", currentWork === 0);
     dialogImage.style.width = "";
     dialogImage.style.height = "";
-    const rotatedWork = currentWork === 0;
-    dialogImage.style.transform = rotatedWork ? "rotate(90deg)" : "";
-    dialogImage.style.maxWidth = rotatedWork ? "none" : "";
-    dialogImage.style.maxHeight = rotatedWork ? "none" : "";
+    dialogImage.style.transform = "";
+    dialogImage.style.maxWidth = "";
+    dialogImage.style.maxHeight = "";
     zoomValue.textContent = "100%";
     stage.scrollTo(0, 0);
     dialogImage.src = artwork[currentWork];
@@ -1587,8 +1590,8 @@
   document.getElementById("next").addEventListener("click", () => showWork((currentWork + 1) % 12));
   function applyZoom(nextFactor, preserveCenter = false) {
     if (!dialogImage.naturalWidth || !dialogImage.naturalHeight) return;
-    const oldWidth = dialogImage.getBoundingClientRect().width;
-    const oldHeight = dialogImage.getBoundingClientRect().height;
+    const oldWidth = viewerFrame.getBoundingClientRect().width;
+    const oldHeight = viewerFrame.getBoundingClientRect().height;
     const rotatedWork = currentWork === 0;
     const fitWidth = Math.min(stage.clientWidth, window.innerWidth * 0.96, 2400);
     const fitHeight = Math.min(stage.clientHeight, window.innerHeight - 116);
@@ -1597,17 +1600,17 @@
     const fitScale = Math.min(fitWidth / visualWidth, fitHeight / visualHeight, 1);
     const maxZoom = 1 / fitScale;
     zoomFactor = Math.max(1, Math.min(maxZoom, nextFactor));
-    const width = dialogImage.naturalWidth * fitScale * zoomFactor;
-    const height = dialogImage.naturalHeight * fitScale * zoomFactor;
-    const visibleWidth = rotatedWork ? height : width;
-    const visibleHeight = rotatedWork ? width : height;
-    dialogImage.style.width = `${width}px`;
-    dialogImage.style.height = `${height}px`;
+    const displayWidth = visualWidth * fitScale * zoomFactor;
+    const displayHeight = visualHeight * fitScale * zoomFactor;
+    viewerFrame.style.width = `${displayWidth}px`;
+    viewerFrame.style.height = `${displayHeight}px`;
+    dialogImage.style.width = `${rotatedWork ? displayHeight : displayWidth}px`;
+    dialogImage.style.height = `${rotatedWork ? displayWidth : displayHeight}px`;
     stage.classList.toggle("zoomed", zoomFactor > 1.001);
     zoomValue.textContent = `${Math.round(zoomFactor * 100)}%`;
     if (preserveCenter && oldWidth && oldHeight) {
-      stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (visibleWidth / oldWidth) - stage.clientWidth / 2;
-      stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (visibleHeight / oldHeight) - stage.clientHeight / 2;
+      stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (displayWidth / oldWidth) - stage.clientWidth / 2;
+      stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (displayHeight / oldHeight) - stage.clientHeight / 2;
     } else if (zoomFactor === 1) {
       stage.scrollTo(0, 0);
     }
