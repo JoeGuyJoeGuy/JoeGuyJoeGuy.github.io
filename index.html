@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#11100e">
   <meta name="description" content="A continuous, immersive world of abstract paintings by Joe Guy.">
   <title>Joe Guy — Inside the Sphere</title>
-  <link rel="stylesheet" href="styles.css?v=sky-109">
-  <script src="script.js?v=sky-134" defer></script>
+  <link rel="stylesheet" href="styles.css?v=sky-167">
+  <script src="script.js?v=sky-167" defer></script>
 </head>
 <body>
   <audio id="background-music" src="audio/yung-leion2.wav" preload="none" loop></audio>
-  <canvas id="sky" aria-label="A 360 degree abstract painted world. Drag to look around and click a painting to view it in full size."></canvas>
+  <canvas id="sky" aria-label="A 360 degree abstract painted world. Move the mouse to look on desktop, or drag on a touchscreen. Select a painting or a star to inspect it."></canvas>
   <div class="experience-error" id="experience-error" role="status" aria-live="polite" hidden></div>
 
   <header class="hud">
@@ -21,11 +21,10 @@
 
   <section class="entry" id="entry" aria-labelledby="entry-title">
     <div class="entry-copy">
-      <div class="entry-eyebrow"><span>12 ORIGINAL PAINTINGS</span><span>ONE SHARED SPACE</span></div>
       <h1 id="entry-title">JOE<br><em>GUY</em></h1>
       <button class="enter" id="enter" type="button"><span>ENTER THE SPHERE</span><span class="enter-arrow" aria-hidden="true">↗</span></button>
-      <a href="https://joe-guy-portfolio.hnw8wb5drh.workers.dev/" aria-label="Open photography and video portfolio" style="display:inline-flex;align-items:center;gap:24px;margin-top:18px;color:#e7c9a0;text-decoration:none;font:11px var(--mono);letter-spacing:.16em">PORTFOLIO <span aria-hidden="true">↗</span></a>
-      <div class="entry-foot"><span>LOOK AROUND <i>↔</i></span><span>MOVE THROUGH <i>W A S D</i></span><span>INSPECT A WORK <i>CLICK</i></span><details style="position:relative;display:inline-block"><summary style="cursor:pointer;list-style:none">MUSIC +</summary><div style="position:absolute;bottom:calc(100% + 10px);left:0;z-index:10;min-width:150px;padding:14px;background:#191613;border:1px solid #a5825680;display:grid;gap:12px"><a href="https://open.spotify.com/artist/6RpFnSaLJNWhMLQGuA7w7n?si=rVBXqqQKTdyuIqH0CESvuQ" target="_blank" rel="noopener noreferrer">SPOTIFY ↗</a><a href="https://music.apple.com/us/artist/joe-guy/1553978495" target="_blank" rel="noopener noreferrer">APPLE MUSIC ↗</a><a href="https://tidal.com/artist/joe-guy/5929340" target="_blank" rel="noopener noreferrer">TIDAL ↗</a><a href="https://joeguy.bandcamp.com/album/ersatz" target="_blank" rel="noopener noreferrer">BANDCAMP ↗</a></div></details></div>
+      <a class="portfolio-entry" href="https://joe-guy-portfolio.hnw8wb5drh.workers.dev/">PORTFOLIO <span aria-hidden="true">↗</span></a>
+      <div class="entry-foot"><span>LOOK AROUND <i>↔</i></span><span>MOVE THROUGH <i>W A S D</i></span><span>INSPECT A WORK <i>CLICK</i></span><details class="music-menu"><summary>MUSIC <i aria-hidden="true">+</i></summary><div class="music-links" aria-label="Music platforms"><a href="https://open.spotify.com/artist/6RpFnSaLJNWhMLQGuA7w7n?si=rVBXqqQKTdyuIqH0CESvuQ" target="_blank" rel="noopener noreferrer">SPOTIFY <i aria-hidden="true">↗</i></a><a href="https://music.apple.com/us/artist/joe-guy/1553978495" target="_blank" rel="noopener noreferrer">APPLE MUSIC <i aria-hidden="true">↗</i></a><a href="https://tidal.com/artist/joe-guy/5929340" target="_blank" rel="noopener noreferrer">TIDAL <i aria-hidden="true">↗</i></a><a href="https://joeguy.bandcamp.com/album/ersatz" target="_blank" rel="noopener noreferrer">BANDCAMP <i aria-hidden="true">↗</i></a></div></details></div>
     </div>
   </section>
 
@@ -34,10 +33,46 @@
         <div><button type="button" data-flight-key="q" aria-label="Fly down, Q">Q↓</button><button type="button" data-move="forward" aria-label="Fly forward">↑</button><button type="button" data-flight-key="e" aria-label="Fly up, E">E↑</button></div>
         <div><button type="button" data-move="left" aria-label="Fly left">←</button><button type="button" data-move="back" aria-label="Fly backward">↓</button><button type="button" data-move="right" aria-label="Fly right">→</button></div>
     </div>
+    <div class="mobile-flight" aria-label="Touch flight controls">
+      <div class="flight-joystick" id="flight-joystick" role="application" aria-label="Drag to fly forward, back, left or right"><span class="joystick-knob" id="joystick-knob"></span></div>
+      <div class="flight-height"><button type="button" data-flight-key="e" aria-label="Fly up">↑</button><button type="button" data-flight-key="q" aria-label="Fly down">↓</button></div>
+    </div>
     <span>FLIGHT</span>
   </div>
-  <div class="world-hint" id="world-hint" hidden><span class="hint-dot"></span>DRAG TO LOOK <i>·</i> WASD TO FLY <i class="hint-inspect-separator">·</i><span class="hint-inspect">CLICK A WORK TO INSPECT</span></div>
-  <div class="position" id="position" hidden><span>POSITION</span><span id="position-value">CENTRE</span></div>
+  <div class="world-hint" id="world-hint" hidden><span class="hint-dot"></span><span id="look-hint">CLICK TO LOOK</span> <i>·</i> <span id="interaction-hint">CLICK OR ENTER TO INSPECT</span> <i class="hint-inspect-separator">·</i><span class="hint-inspect">ESC FOR MOUSE</span></div>
+  <div class="visitor-fact" id="visitor-fact" role="status" aria-live="polite" hidden></div>
+  <div class="star-prompt" id="star-prompt" aria-live="polite" hidden></div>
+  <dialog class="eye-offer" id="eye-offer" aria-label="The coin constellation">
+    <button class="eye-offer-close" id="eye-offer-close" type="button" aria-label="Close">×</button>
+    <p class="eye-offer-kicker">PENITENCE · THE COIN CONSTELLATION</p>
+    <section class="conversation-step" data-offer-step="offering">
+      <h3>Leave a little<br><em>light behind.</em></h3>
+      <p class="eye-offer-copy">A voluntary offering to support Joe’s art. Each coin is worth £1.</p>
+      <p class="chosen-offering" id="offering-value" aria-live="polite">1 coin · £1</p>
+      <label class="custom-offering-label" for="custom-offering">Or choose your own amount in pounds</label>
+      <div class="custom-offering-input"><span aria-hidden="true">£</span><input id="custom-offering" type="number" inputmode="decimal" min="1" max="9999.99" step="0.01" placeholder="Your amount" aria-describedby="custom-offering-help"></div>
+      <p class="custom-offering-help" id="custom-offering-help">From £1 to £9,999.99. Leave blank to follow the star.</p>
+      <div class="conversation-choices"><button type="button" data-offer-next="currency">Follow this star <span>↗</span></button><button type="button" id="eye-offer-dismiss">Return to the sky</button></div>
+    </section>
+    <section class="conversation-step" data-offer-step="currency" hidden>
+      <h3>What kind of<br><em>coin is yours?</em></h3>
+      <p class="currency-label">Choose your coin</p><div class="currency-tokens" id="currency-tokens" role="radiogroup" aria-label="Choose your currency"></div>
+      <div class="currency-scale" aria-label="Offering conversion" aria-live="polite">
+        <div class="scale-beam" aria-hidden="true"></div><div class="scale-post" aria-hidden="true"></div>
+        <div class="scale-pan"><img src="artwork/currencies/GBP.svg?v=coins-163" alt=""><span class="scale-value" id="currency-pounds">£1</span><span class="scale-caption">BRITISH POUNDS</span></div>
+        <div class="scale-equals" aria-hidden="true">≈</div>
+        <div class="scale-pan"><img id="currency-selected-coin" src="artwork/currencies/GBP.svg?v=coins-163" alt=""><span class="scale-value" id="currency-estimate">£1</span><span class="scale-caption" id="currency-caption">GBP</span></div>
+      </div><p class="scale-note">Approximate conversion · final amount confirmed at checkout</p>
+      <div class="conversation-choices"><button type="button" data-offer-next="payment">This is my coin <span>↗</span></button><button type="button" data-offer-next="offering">Go back</button></div>
+    </section>
+    <section class="conversation-step" data-offer-step="payment" hidden>
+      <h3>How shall we<br><em>make the offering?</em></h3>
+      <p class="eye-offer-copy">Offer with a digital wallet or card.</p>
+      <p class="chosen-offering" id="offering-total">£1</p><div class="eye-payment-options"><button class="eye-offer-pay" type="button" disabled>APPLE PAY / GOOGLE PAY</button><button class="eye-offer-pay" type="button" disabled>CARD</button></div>
+      <p class="eye-offer-status">The payment paths aren’t open yet.</p>
+      <div class="conversation-choices"><button type="button" data-offer-next="currency">Go back</button></div>
+    </section>
+  </dialog>
 
   <dialog class="art-viewer" id="art-viewer" aria-label="Full-size painting viewer">
     <div class="viewer-top">

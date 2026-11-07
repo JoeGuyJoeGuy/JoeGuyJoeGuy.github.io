@@ -22,7 +22,6 @@
   };
   const hint = document.getElementById("world-hint");
   const controls = document.getElementById("controls");
-  const positionLabel = document.getElementById("position-value");
   const dialog = document.getElementById("art-viewer");
   const dialogImage = document.getElementById("viewer-image");
   const dialogIndex = document.getElementById("viewer-index");
@@ -32,7 +31,34 @@
   const zoomInButton = document.getElementById("zoom-in");
   const zoomValue = document.getElementById("zoom-value");
   const fitButton = document.getElementById("fit-button");
+  const detailLayer = document.createElement("div");
+  detailLayer.className = "viewer-detail";
+  detailLayer.setAttribute("aria-hidden", "true");
+  viewerFrame.appendChild(detailLayer);
+  let detailManifest = null;
+  let detailFrame = 0;
+  fetch("artwork/detail/manifest.json").then(response => response.ok ? response.json() : null).then(manifest => {
+    detailManifest = manifest;
+    if (dialog.open && dialogImage.complete) applyZoom(zoomFactor);
+  }).catch(() => {});
   const backgroundMusic = document.getElementById("background-music");
+  const eyeOffer = document.getElementById("eye-offer");
+  const starPrompt = document.getElementById("star-prompt");
+  const lookHint = document.getElementById("look-hint");
+  const interactionHint = document.getElementById("interaction-hint");
+  const mouseCamera = matchMedia("(hover: hover) and (pointer: fine)").matches && !!canvas.requestPointerLock;
+  let canLockMouse = mouseCamera;
+  let fallbackMouseLook = false;
+  if (!mouseCamera) { lookHint.textContent = "DRAG TO LOOK"; interactionHint.textContent = "PINCH TO ZOOM · TAP TO INSPECT"; }
+  const offeringAmounts = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233];
+  const offeringCurrencies = ["GBP", "USD", "EUR", "AUD", "CAD", "CHF", "CZK", "DKK", "HKD", "HUF", "ILS", "JPY", "MXN", "NOK", "NZD", "PHP", "PLN", "SEK", "SGD", "THB", "TWD"];
+  let offeringCurrency = "GBP";
+  let offeringIndex = 0;
+  let customOfferingPence = null;
+  let offeringRates = null;
+  let offeringRateDate = "";
+  const offeringRateDates = {};
+  let offeringRatesPending = false;
   const held = new Set();
   const gl = canvas.getContext("webgl", { alpha: false, antialias: true, powerPreference: "high-performance" });
 
@@ -43,6 +69,13 @@
 
   let yaw = 0;
   let pitch = 0;
+  const defaultFov = Math.PI / 2.35;
+  let cameraFov = defaultFov;
+  let targetFov = defaultFov;
+  const skyPointers = new Map();
+  let skyPinch = null;
+  let skyPinchUsed = false;
+  const joystickVector = [0, 0];
   let camera = [0, 0, 0];
   let radius = 14;
   let program;
@@ -57,13 +90,43 @@
   let throneEye;
   let throneLid;
   let seraphim;
+  let wingTexture;
   let seraphCore;
   let seraphEye;
+  let newtBody;
+  let newtShellTexture;
+  let newtShellTextureReady = false;
+  let newtStart = null;
+  const visitorFact = document.getElementById("visitor-fact");
+  const visitorFacts = [
+    "A password manager can create a different password for each account.",
+    "Multi-factor authentication adds another layer of protection to an account.",
+    "Updates often fix security vulnerabilities as well as adding features.",
+    "Phishing messages can look like they come from someone you trust.",
+    "A backup kept separately can help recover files after a ransomware attack.",
+    "A passkey can let you sign in without typing a password."
+  ];
+  let visitorArrivedAt = null;
+  let visitorFactIndex = -1;
+  let newtState = null;
+  let newtAgent = null;
+  let constellationDirection = null;
+  let constellationGuide = null;
+  let constellationRight = null;
+  let constellationUp = null;
+  let constellationProgram = null;
+  let constellationBuffer = null;
+  let constellationLabelTexture = null;
+  let constellationLocations = null;
+  let constellationStars = [];
+  let constellationLineCount = 0;
+  let focusedStar = -1;
   let seraphApproachStart = null;
   let throneEyeTexture;
   let throneEyeTextureReady = false;
   let seraphEyeTexture;
   let seraphEyeTextureReady = false;
+  let angelPigment = null;
   let time = 0;
   let lastFrame = 0;
   let qualityScale = 1;
@@ -77,6 +140,9 @@
   let currentWork = 0;
   let pointerStart = null;
   let inspectSwipeStart = null;
+  const inspectTouches = new Map();
+  let pinchDistance = 0;
+  let pinchUsed = false;
   let zoomFactor = 1;
 
   if (legacyLoading) legacyLoading.remove();
@@ -229,7 +295,8 @@
           vec3 pigment = mix(pigmentA, pigmentB, dust * 0.7);
           vec3 color = vec3(0.010, 0.015, 0.038) + pigment * nebula * vec3(0.38, 0.30, 0.32);
           color += vec3(0.025, 0.018, 0.058) * nebula;
-          vec3 farStars = normalize(ray + u_camera / u_sky_radius);
+          // Stars are fixed in the distant sky when the viewer flies.
+          vec3 farStars = normalize(ray);
           float fineStars = starField(farStars, 180.0, 7.0, 0.935);
           color += vec3(0.64, 0.72, 0.88) * fineStars * 0.65;
           vec3 insideNormal = -normal;
@@ -335,6 +402,64 @@
     return next;
   }
 
+  function createConstellationProgram() {
+    const vertex = createShader(gl.VERTEX_SHADER, `
+      attribute vec3 a_position;
+      attribute float a_index;
+      uniform vec3 u_forward;
+      uniform vec3 u_right;
+      uniform vec3 u_up;
+      uniform float u_aspect;
+      uniform float u_scale;
+      uniform float u_point_size;
+      uniform float u_focus;
+      varying float v_focus;
+      varying float v_index;
+      varying float v_visibility;
+      void main() {
+        float depth = dot(a_position, u_forward);
+        gl_Position = vec4(dot(a_position, u_right) / (u_aspect * u_scale),
+          dot(a_position, u_up) / u_scale, depth, depth);
+        v_focus = 1.0 - step(0.25, abs(a_index - u_focus));
+        v_index = a_index;
+        // Keep the inner stars bright enough to pick out without zooming;
+        // preserve the glowing focus as the viewer moves closer.
+        float separation = 0.0234 * pow(1.618034, max(0.0, a_index)) / max(0.003, u_scale);
+        v_visibility = max(smoothstep(0.004, 0.03, separation), max(v_focus, 1.0 - step(0.5, a_index)));
+        gl_PointSize = u_point_size * mix(1.0, 1.55, v_focus);
+      }
+    `);
+    const fragment = createShader(gl.FRAGMENT_SHADER, `
+      precision mediump float;
+      uniform float u_points;
+      uniform sampler2D u_labels;
+      varying float v_focus;
+      varying float v_index;
+      varying float v_visibility;
+      void main() {
+        if (u_points < 0.5) {
+          gl_FragColor = vec4(0.86, 0.71, 0.48, 0.38);
+        } else if (u_points > 1.5) {
+          if (v_focus < 0.5) discard;
+          vec2 uv = vec2(gl_PointCoord.x, (v_index + gl_PointCoord.y) / 12.0);
+          vec4 label = texture2D(u_labels, uv);
+          gl_FragColor = vec4(label.rgb * mix(0.85, 1.0, v_focus), label.a);
+        } else {
+          float r = length(gl_PointCoord - vec2(0.5));
+          float halo = (1.0 - smoothstep(0.05, 0.50, r)) * 0.45;
+          float core = 1.0 - smoothstep(0.03, 0.16, r);
+          float alpha = clamp(halo + core * 0.85, 0.0, 1.0) * mix(0.70, 1.0, v_focus) * v_visibility;
+          gl_FragColor = vec4(mix(vec3(0.86, 0.72, 0.51), vec3(1.0, 0.91, 0.70), v_focus), alpha);
+        }
+      }
+    `);
+    const next = gl.createProgram();
+    gl.attachShader(next, vertex); gl.attachShader(next, fragment); gl.linkProgram(next);
+    if (!gl.getProgramParameter(next, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(next) || "Could not link constellation shader");
+    gl.deleteShader(vertex); gl.deleteShader(fragment);
+    return next;
+  }
+
   function createThroneProgram() {
     const vertex = createShader(gl.VERTEX_SHADER, `
       attribute vec3 a_position;
@@ -345,12 +470,27 @@
       uniform mat4 u_view_projection;
       uniform mediump float u_seraph_wrap;
       uniform float u_seraph_eye_wrap;
+      uniform float u_newt_animated;
+      uniform highp float u_newt_time;
+      uniform float u_newt_entry;
       varying vec3 v_normal;
       varying vec3 v_world;
+      varying vec3 v_seraph_world;
       varying vec3 v_color;
       varying vec3 v_local;
       void main() {
-        vec4 world = u_model * vec4(a_position, 1.0);
+        vec3 animatedPosition = a_position;
+        if (u_newt_animated > 0.5) {
+          // The flagellum grows from behind the eye along the body's depth,
+          // so the eye leads the creature rather than sitting beside its tail.
+          float tailLength = max(0.0, -a_position.z - 0.53);
+          float tail = smoothstep(0.04, 2.2, tailLength);
+          float swim = u_newt_time * 4.0 - tailLength * 2.8;
+          float clearance = 1.0 - 0.78 * u_newt_entry;
+          animatedPosition.x += sin(swim) * 0.30 * tail * clearance;
+          animatedPosition.y += sin(swim - 1.2) * 0.14 * tail * clearance;
+        }
+        vec4 world = u_model * vec4(animatedPosition, 1.0);
         if (u_seraph_wrap > 0.001) {
           vec3 right = normalize(u_model[0].xyz);
           vec3 up = normalize(u_model[1].xyz);
@@ -377,11 +517,12 @@
           world = vec4(blendedDirection * radius, 1.0);
         }
         v_world = world.xyz;
+        v_seraph_world = world.xyz * 0.0001;
         v_normal = normalize(mat3(u_model) * a_normal);
         v_color = a_color;
         v_local = a_position;
         gl_Position = max(u_seraph_wrap, u_seraph_eye_wrap) > 0.001
-          ? u_view_projection * world : u_mvp * vec4(a_position, 1.0);
+          ? u_view_projection * world : u_mvp * vec4(animatedPosition, 1.0);
       }
     `);
     const fragment = createShader(gl.FRAGMENT_SHADER, `
@@ -395,20 +536,63 @@
       uniform float u_eye_texture_ready;
       uniform float u_eye_uv_scale;
       uniform float u_seraph_blink;
+      uniform float u_feather_detail;
+      uniform sampler2D u_wing_painting;
+      uniform sampler2D u_newt_shell_texture;
+      uniform float u_newt_shell;
+      uniform float u_newt_panel_pass;
+      uniform float u_newt_panel_radius;
+      uniform highp float u_newt_time;
       uniform mediump float u_seraph_wrap;
       uniform vec3 u_seraph_eye_forward;
       uniform vec3 u_seraph_eye_right;
       uniform vec3 u_seraph_eye_up;
       varying vec3 v_normal;
       varying vec3 v_world;
+      varying vec3 v_seraph_world;
       varying vec3 v_color;
       varying vec3 v_local;
+      // Match the moving, flat painting panels when deciding which pieces of
+      // the visitor belong in front of or behind them. This is only evaluated
+      // for the visitor, not for the much larger angel meshes.
+      bool paintingInFront(vec3 point) {
+        vec3 offset = point - u_camera;
+        float visitorDistance = length(offset);
+        vec3 ray = offset / max(visitorDistance, 0.001);
+        for (int i = 0; i < 36; i++) {
+          float column = float(i - (i / 6) * 6);
+          float row = float(i / 6);
+          float travel = u_newt_time * 0.01225 * (1.0 + 0.02 * sin(float(i) * 1.7)) + float(i) * 0.001;
+          float latitude = 1.31 - row * 0.524 - travel;
+          float longitude = (column - 1.0) * 1.0471975512 - 1.5707963268 - travel * 0.72;
+          vec3 center = normalize(vec3(cos(latitude) * cos(longitude), sin(latitude), cos(latitude) * sin(longitude)));
+          float facing = dot(ray, center);
+          if (facing > 0.15) {
+            vec3 panelPosition = u_newt_panel_radius * vec3(center.x, center.y * 1.12, center.z);
+            float distance = dot(panelPosition - u_camera, center) / facing;
+            if (distance > 0.0 && distance < visitorDistance) {
+              vec3 referenceUp = abs(center.y) > 0.94 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+              vec3 right = normalize(cross(referenceUp, center));
+              vec3 up = normalize(cross(center, right));
+              vec3 panelOffset = u_camera + ray * distance - panelPosition;
+              vec2 uv = abs(vec2(dot(panelOffset, right), dot(panelOffset, up)) / u_newt_panel_radius / vec2(0.68, 0.68 * (2.0 / 3.0)));
+              float opacity = (1.0 - smoothstep(0.66, 1.0, uv.x)) * (1.0 - smoothstep(0.66, 1.0, uv.y)) * smoothstep(0.0, 0.34, abs(cos(latitude)));
+              if (opacity > 0.001) return true;
+            }
+          }
+        }
+        return false;
+      }
       void main() {
+        if (u_newt_panel_pass > 0.5) {
+          bool behindPainting = paintingInFront(v_world);
+          if ((u_newt_panel_pass < 1.5 && !behindPainting) || (u_newt_panel_pass > 1.5 && behindPainting)) discard;
+        }
         if (u_seraph_wrap > 0.72) {
           // Leave a clean opening behind the curved eye as the wings wrap.
           // This prevents feather tips from crossing its socket at the end
           // of the approach, including when the viewer moves off centre.
-          vec3 ray = normalize(v_world - u_camera);
+          vec3 ray = normalize(v_seraph_world - u_camera * 0.0001);
           float forward = dot(ray, u_seraph_eye_forward);
           float longitude = atan(dot(ray, u_seraph_eye_right), forward);
           float latitude = asin(clamp(dot(ray, u_seraph_eye_up), -1.0, 1.0));
@@ -417,10 +601,20 @@
           if (forward > 0.0 && length(eyeOpening) < clearance) discard;
         }
         vec3 normal = normalize(v_normal);
-        vec3 viewDirection = normalize(u_camera - v_world);
-        vec3 lightDirection = normalize(u_light - v_world);
+        // Giant wings can be tens of thousands of units away. Normalize a
+        // scaled vector on those fragments to avoid mediump overflow on phones.
+        vec3 viewDirection = u_feather_detail > 0.5
+          ? normalize(u_camera * 0.0001 - v_seraph_world) : normalize(u_camera - v_world);
+        vec3 lightDirection = u_feather_detail > 0.5
+          ? normalize(u_light * 0.0001 - v_seraph_world) : normalize(u_light - v_world);
         float diffuse = max(dot(normal, lightDirection), 0.0);
         float specular = pow(max(dot(reflect(-lightDirection, normal), viewDirection), 0.0), 34.0);
+        if (u_feather_detail > 0.5) {
+          // The very large wrapped wings need a steady ambient contribution;
+          // a moving point light produces harsh flashes at this scale.
+          diffuse = 0.48;
+          specular = 0.0;
+        }
         float fresnel = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.4);
         // Keep the throne in the shadows behind the art. Tight, restrained
         // highlights preserve the sculpted bronze without pulling focus.
@@ -480,6 +674,23 @@
           color += vec3(0.012, 0.007, 0.002) * fineCut * goldSurface;
           color += vec3(0.050, 0.029, 0.008) * bead * borders * goldSurface;
         }
+        if (u_feather_detail > 0.5) {
+          // A small baked luminance map preserves the paint's cracks and
+          // brushwork without importing the painting's colours to the wings.
+          // One continuous projection across the wing assembly avoids the
+          // repeated square tiles visible in the earlier texture.
+          vec2 pigmentUV = clamp((v_local.xy + vec2(47.0, 39.0)) / vec2(94.0, 78.0), 0.001, 0.999);
+          float pigmentGrain = texture2D(u_wing_painting, pigmentUV).r;
+          color *= 0.58 + 0.84 * pigmentGrain;
+        }
+        if (u_newt_shell > 0.5) {
+          // The visitor shares the wings' warm, painted bronze palette while
+          // retaining soft highlights across its curved 3D surface.
+          float sheen = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
+          float organicGrain = sin(v_local.x * 47.0 + sin(v_local.y * 19.0)) * sin(v_local.z * 39.0 - v_local.y * 25.0);
+          color = v_color * (0.35 + diffuse * 0.50) + vec3(0.14, 0.075, 0.026) * sheen;
+          color += vec3(0.40, 0.25, 0.11) * specular * 0.30 + organicGrain * 0.012;
+        }
         color += vec3(0.48, 0.39, 0.29) * specular * 0.26 * eyeGloss;
         color += vec3(0.52, 0.31, 0.12) * specular * 0.035;
         color += vec3(0.12, 0.06, 0.02) * fresnel * 0.02;
@@ -518,6 +729,23 @@
 
   function appendMeshVertex(data, position, normal, color) {
     data.push(position[0], position[1], position[2], normal[0], normal[1], normal[2], color[0], color[1], color[2]);
+  }
+
+  function applyAngelPatina(data, feather = false) {
+    if (!angelPigment) return;
+    // Bake pigment from the paintings into the existing mesh once, avoiding
+    // a texture lookup for every animated pixel on mobile devices.
+    for (let i = 0; i < data.length; i += 9) {
+      const x = data[i], y = data[i + 1];
+      const u = ((Math.floor(x * 3.7 + y * 0.8) % 64) + 64) % 64;
+      const v = ((Math.floor(y * 3.7 - x * 0.5) % 64) + 64) % 64;
+      const pixel = (v * 64 + u) * 4;
+      const grain = 0.87 + 0.12 * (0.5 + 0.5 * Math.sin(x * 7.3 + y * 11.1));
+      const strength = feather ? 0.09 : 0.055;
+      for (let channel = 0; channel < 3; channel += 1) {
+        data[i + 6 + channel] = Math.min(1, data[i + 6 + channel] * grain + angelPigment[pixel + channel] / 255 * strength);
+      }
+    }
   }
 
   function appendTorus(data, radiusOnPlane, tubeRadius, color, segments, sides) {
@@ -1014,6 +1242,7 @@
     const scrollCount = Math.round(radiusOnPlane * 0.64);
     appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, -1.30, 0.85, scrollCount, [0.34, 0.20, 0.072], segments, 6);
     appendBeltScroll(data, radiusOnPlane, halfWidth, halfThickness, 1.30, 0.85, scrollCount, [0.34, 0.20, 0.072], segments, 6);
+    applyAngelPatina(data);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -1168,16 +1397,61 @@
         }
       }
     }
+    applyAngelPatina(data, true);
+    // Keep only the positions for a one-time sky-clearance search; the
+    // detailed surface stays in its existing GPU mesh.
+    const occlusionPositions = new Float32Array(data.length / 3);
+    for (let src = 0, dst = 0; src < data.length; src += 9) {
+      occlusionPositions[dst++] = data[src];
+      occlusionPositions[dst++] = data[src + 1];
+      occlusionPositions[dst++] = data[src + 2];
+    }
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
-    return { buffer, count: data.length / 9 };
+    return { buffer, count: data.length / 9, occlusionPositions };
   }
 
   function makeSeraphCore(compact) {
     const data = [];
     appendEyeEllipsoid(data, [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1],
       [4.3, 4.8, 1.55], [0.25, 0.14, 0.055], ...(compact ? [10, 14] : [18, 26]));
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    return { buffer, count: data.length / 9 };
+  }
+
+  function makeEyeNewt(compact) {
+    const data = [];
+    const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const skin = unit => {
+      const flecks = 0.5 + 0.5 * Math.sin(unit[0] * 28 + unit[1] * 17) * Math.sin(unit[1] * 32 - unit[2] * 11);
+      const glow = Math.max(0, unit[1]);
+      return [0.34 + flecks * 0.07 + glow * 0.035, 0.19 + flecks * 0.05, 0.065 + flecks * 0.018];
+    };
+    const detail = compact ? [16, 24] : [28, 42];
+    // A spherical mechanical eye with a single continuous flagellum.
+    appendEyeEllipsoid(data, [0, 0, 0], ...axes, [0.55, 0.52, 0.65], skin, ...detail);
+    appendEyeDetailRing(data, 0.49, 0.035, 0.34, [0.22, 0.12, 0.04], compact ? 40 : 72, compact ? 4 : 6);
+    appendEyeDetailRing(data, 0.44, 0.018, 0.46, [0.38, 0.22, 0.075], compact ? 40 : 72, compact ? 4 : 6);
+    for (let i = 0; i < 12; i += 1) {
+      const angle = i * Math.PI * 2 / 12;
+      appendEyeEllipsoid(data, [Math.cos(angle) * 0.49, Math.sin(angle) * 0.49, 0.36], ...axes,
+        [0.027, 0.027, 0.016], [0.38, 0.22, 0.075], ...(compact ? [4, 5] : [6, 8]));
+    }
+    const segments = compact ? 28 : 50, sides = compact ? 6 : 10;
+    function tailVertex(step, side) {
+      const t = step / segments, angle = side / sides * Math.PI * 2;
+      const thickness = 0.13 * (1 - t) ** 1.25 + 0.006;
+      return { position: [Math.cos(angle) * thickness, Math.sin(angle) * thickness, -0.53 - 3.0 * t],
+        normal: [Math.cos(angle), Math.sin(angle), 0.04], color: [0.34 + 0.04 * (1 - t), 0.19 + 0.03 * (1 - t), 0.07] };
+    }
+    for (let step = 0; step < segments; step += 1) for (let side = 0; side < sides; side += 1) {
+      const a = tailVertex(step, side), b = tailVertex(step + 1, side), c = tailVertex(step + 1, side + 1), d = tailVertex(step, side + 1);
+      for (const v of [a, b, c, a, c, d]) appendMeshVertex(data, v.position, v.normal, v.color);
+    }
+    applyAngelPatina(data, true);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
@@ -1305,9 +1579,9 @@
     ]);
   }
 
-  function throneProjectionMatrix() {
-    const near = 0.5, far = 160000;
-    const f = 1 / Math.tan((Math.PI / 2.35) / 2);
+  function throneProjectionMatrix(near = 0.5) {
+    const far = 160000;
+    const f = 1 / Math.tan(cameraFov / 2);
     const aspect = canvas.width / canvas.height;
     return new Float32Array([
       f / aspect, 0, 0, 0,
@@ -1326,15 +1600,23 @@
     if (!experienceStarted || dialog.open || !throneProgram) return;
     const dirs = basis();
     const view = throneViewMatrix(dirs);
-    const projection = throneProjectionMatrix();
-    const tanHalfFov = Math.tan((Math.PI / 2.35) / 2);
+    let projection = throneProjectionMatrix();
+    const tanHalfFov = Math.tan(cameraFov / 2);
     const aspect = canvas.width / canvas.height;
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
+    // Reserve separate depth ranges for the near rings and distant angel.
+    gl.depthRange(0, 0.45);
     gl.disable(gl.CULL_FACE);
     gl.useProgram(throneProgram);
     gl.uniformMatrix4fv(throneLocations.viewProjection, false, matrixMultiply(projection, view));
+    gl.uniform1f(throneLocations.newtAnimated, 0);
+    gl.uniform1f(throneLocations.newtShell, 0);
+    gl.uniform1f(throneLocations.newtPanelPass, 0);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, wingTexture);
+    gl.uniform1i(throneLocations.wingPainting, 3);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
     gl.uniform1i(throneLocations.eyeTexture, 1);
@@ -1349,7 +1631,7 @@
     gl.enableVertexAttribArray(positionAttribute);
     gl.enableVertexAttribArray(normalAttribute);
     gl.enableVertexAttribArray(colorAttribute);
-    const drawMesh = (mesh, model, renderGain = 1, ringRadius = 0, bandHalfWidth = 0, seraphWrap = 0, eyeUvScale = 1, eyeWrap = 0, seraphBlink = 0) => {
+    const drawMesh = (mesh, model, renderGain = 1, ringRadius = 0, bandHalfWidth = 0, seraphWrap = 0, eyeUvScale = 1, eyeWrap = 0, seraphBlink = 0, featherDetail = 0) => {
       const mvp = matrixMultiply(projection, matrixMultiply(view, model));
       gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
       gl.vertexAttribPointer(positionAttribute, 3, gl.FLOAT, false, stride, 0);
@@ -1362,6 +1644,7 @@
       gl.uniform1f(throneLocations.seraphEyeWrap, eyeWrap);
       gl.uniform1f(throneLocations.eyeUvScale, eyeUvScale);
       gl.uniform1f(throneLocations.seraphBlink, seraphBlink);
+      gl.uniform1f(throneLocations.featherDetail, featherDetail);
       gl.uniformMatrix4fv(throneLocations.model, false, model);
       gl.uniformMatrix4fv(throneLocations.mvp, false, mvp);
       gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
@@ -1417,6 +1700,11 @@
         }
       }
     });
+    // A distant-only projection gives overlapping feather surfaces much more
+    // depth precision. The reserved range keeps the near rings in front.
+    projection = throneProjectionMatrix(100);
+    gl.uniformMatrix4fv(throneLocations.viewProjection, false, matrixMultiply(projection, view));
+    gl.depthRange(0.5, 1);
     // The seraphim orbits beyond all three rings and stays within the skybox.
     // Its inward-facing frame keeps the central eye fixed on the viewer.
     const orbit = 0.22 + time * 0.0035;
@@ -1427,9 +1715,9 @@
     const seraphOrbitRadius = 63450 - 53450 * easedApproach;
     const horizontalRadius = seraphOrbitRadius * Math.SQRT1_2;
     const seraphPosition = [Math.sin(orbit) * horizontalRadius, horizontalRadius, -Math.cos(orbit) * horizontalRadius];
-    const seraphToCamera = camera.map((value, axis) => value - seraphPosition[axis]);
-    const seraphDistance = Math.hypot(...seraphToCamera) || 1;
-    const seraphNormal = seraphToCamera.map(value => value / seraphDistance);
+    // The body has its own world-space orientation. Only the eye turns to
+    // follow the viewer; flight never drags the wings around with the camera.
+    const bodyNormal = seraphPosition.map(value => -value / seraphOrbitRadius);
     const viewToSeraph = seraphPosition.map((value, axis) => value - camera[axis]);
     const seraphDepth = viewToSeraph.reduce((sum, value, axis) => sum + value * dirs.forward[axis], 0);
     const seraphHorizontal = viewToSeraph.reduce((sum, value, axis) => sum + value * dirs.right[axis], 0);
@@ -1438,23 +1726,31 @@
     if (seraphDepth > -seraphMargin
       && Math.abs(seraphHorizontal) < Math.max(0, seraphDepth) * tanHalfFov * aspect + seraphMargin
       && Math.abs(seraphVertical) < Math.max(0, seraphDepth) * tanHalfFov + seraphMargin) {
-      let right = [-seraphNormal[2], 0, seraphNormal[0]];
-      const rightLength = Math.hypot(...right) || 1;
-      right = right.map(value => value / rightLength);
-      const up = [seraphNormal[1] * right[2] - seraphNormal[2] * right[1],
-        seraphNormal[2] * right[0] - seraphNormal[0] * right[2],
-        seraphNormal[0] * right[1] - seraphNormal[1] * right[0]];
-      const frame = throneFrame(seraphPosition, right, up, seraphNormal);
-      gl.uniform3f(throneLocations.seraphEyeForward, -seraphNormal[0], -seraphNormal[1], -seraphNormal[2]);
-      gl.uniform3f(throneLocations.seraphEyeRight, right[0], right[1], right[2]);
-      gl.uniform3f(throneLocations.seraphEyeUp, up[0], up[1], up[2]);
+      const facingFrame = normal => {
+        let right = [-normal[2], 0, normal[0]];
+        const rightLength = Math.hypot(...right) || 1;
+        right = right.map(value => value / rightLength);
+        const up = [normal[1] * right[2] - normal[2] * right[1],
+          normal[2] * right[0] - normal[0] * right[2],
+          normal[0] * right[1] - normal[1] * right[0]];
+        return { right, up };
+      };
+      const bodyAxes = facingFrame(bodyNormal);
+      const frame = throneFrame(seraphPosition, bodyAxes.right, bodyAxes.up, bodyNormal);
       // Keep Seraphim at one physical scale throughout the approach. The
       // wings bend around the gallery rather than shrinking towards it.
       const seraphScale = 1200;
       const coreScale = Math.max(0, 1 - Math.max(0, (easedApproach - 0.45) / 0.55));
       if (coreScale > 0.005) drawMesh(seraphCore, matrixMultiply(frame, scaleMatrix(seraphScale * coreScale)), 1.45);
-      const eyePosition = seraphPosition.map((value, axis) => value + seraphNormal[axis] * 3.3 * seraphScale);
-      const eyeFrame = throneFrame(eyePosition, right, up, seraphNormal);
+      const eyePosition = seraphPosition.map((value, axis) => value + bodyNormal[axis] * 3.3 * seraphScale);
+      const toCamera = camera.map((value, axis) => value - eyePosition[axis]);
+      const eyeDistance = Math.hypot(...toCamera) || 1;
+      const eyeNormal = toCamera.map(value => value / eyeDistance);
+      const eyeAxes = facingFrame(eyeNormal);
+      const eyeFrame = throneFrame(eyePosition, eyeAxes.right, eyeAxes.up, eyeNormal);
+      gl.uniform3f(throneLocations.seraphEyeForward, -eyeNormal[0], -eyeNormal[1], -eyeNormal[2]);
+      gl.uniform3f(throneLocations.seraphEyeRight, ...eyeAxes.right);
+      gl.uniform3f(throneLocations.seraphEyeUp, ...eyeAxes.up);
       const eyeModel = matrixMultiply(eyeFrame, scaleMatrix(3 * seraphScale));
       if (seraphEyeTextureReady) {
         gl.activeTexture(gl.TEXTURE1);
@@ -1462,16 +1758,17 @@
         gl.uniform1f(throneLocations.eyeTextureReady, 1);
         gl.activeTexture(gl.TEXTURE0);
       }
-      const blink = eyeBlinkAmount(time, 9, 0);
-      drawMesh(seraphEye, eyeModel, 0.50, 0, 0, 0, seraphEyeTextureReady ? 1.4 : 1, easedApproach, blink);
+      // Seraphim keeps an unbroken gaze; the small visitor may still blink.
+      drawMesh(seraphEye, eyeModel, 0.50, 0, 0, 0, seraphEyeTextureReady ? 1.4 : 1, easedApproach, 0);
       // The eye writes depth first, so no wing can draw over its surface.
       // Throne's previously written depth remains in front of both.
-      gl.depthMask(false);
+      gl.depthMask(true);
       gl.depthFunc(gl.LESS);
-      drawMesh(seraphim, matrixMultiply(frame, scaleMatrix(seraphScale)), 1.45, 0, 0, easedApproach);
+      drawMesh(seraphim, matrixMultiply(frame, scaleMatrix(seraphScale)), 1.45, 0, 0, easedApproach, 1, 0, 0, 1);
       gl.depthFunc(gl.LEQUAL);
       gl.depthMask(true);
     }
+    gl.depthRange(0, 1);
     gl.disable(gl.DEPTH_TEST);
   }
 
@@ -1562,6 +1859,22 @@
       };
       gl.useProgram(program);
       throneProgram = createThroneProgram();
+      constellationProgram = createConstellationProgram();
+      constellationBuffer = gl.createBuffer();
+      constellationLabelTexture = gl.createTexture();
+      constellationLocations = {
+        position: gl.getAttribLocation(constellationProgram, "a_position"),
+        index: gl.getAttribLocation(constellationProgram, "a_index"),
+        forward: gl.getUniformLocation(constellationProgram, "u_forward"),
+        right: gl.getUniformLocation(constellationProgram, "u_right"),
+        up: gl.getUniformLocation(constellationProgram, "u_up"),
+        aspect: gl.getUniformLocation(constellationProgram, "u_aspect"),
+        scale: gl.getUniformLocation(constellationProgram, "u_scale"),
+        pointSize: gl.getUniformLocation(constellationProgram, "u_point_size"),
+        focus: gl.getUniformLocation(constellationProgram, "u_focus"),
+        points: gl.getUniformLocation(constellationProgram, "u_points"),
+        labels: gl.getUniformLocation(constellationProgram, "u_labels")
+      };
       throneLocations = {
         camera: gl.getUniformLocation(throneProgram, "u_camera"),
         light: gl.getUniformLocation(throneProgram, "u_light"),
@@ -1575,6 +1888,15 @@
         eyeTextureReady: gl.getUniformLocation(throneProgram, "u_eye_texture_ready"),
         eyeUvScale: gl.getUniformLocation(throneProgram, "u_eye_uv_scale"),
         seraphBlink: gl.getUniformLocation(throneProgram, "u_seraph_blink"),
+        featherDetail: gl.getUniformLocation(throneProgram, "u_feather_detail"),
+        wingPainting: gl.getUniformLocation(throneProgram, "u_wing_painting"),
+        newtAnimated: gl.getUniformLocation(throneProgram, "u_newt_animated"),
+        newtTime: gl.getUniformLocation(throneProgram, "u_newt_time"),
+        newtEntry: gl.getUniformLocation(throneProgram, "u_newt_entry"),
+        newtShell: gl.getUniformLocation(throneProgram, "u_newt_shell"),
+        newtPanelPass: gl.getUniformLocation(throneProgram, "u_newt_panel_pass"),
+        newtPanelRadius: gl.getUniformLocation(throneProgram, "u_newt_panel_radius"),
+        newtShellTexture: gl.getUniformLocation(throneProgram, "u_newt_shell_texture"),
         seraphEyeForward: gl.getUniformLocation(throneProgram, "u_seraph_eye_forward"),
         seraphEyeRight: gl.getUniformLocation(throneProgram, "u_seraph_eye_right"),
         seraphEyeUp: gl.getUniformLocation(throneProgram, "u_seraph_eye_up"),
@@ -1584,6 +1906,53 @@
         normal: gl.getAttribLocation(throneProgram, "a_normal"),
         color: gl.getAttribLocation(throneProgram, "a_color")
       };
+      const pigmentSource = images.find(Boolean);
+      if (pigmentSource) {
+        const pigmentCanvas = document.createElement("canvas");
+        pigmentCanvas.width = pigmentCanvas.height = 64;
+        const pigmentContext = pigmentCanvas.getContext("2d", { willReadFrequently: true });
+        pigmentContext.drawImage(pigmentSource, 0, 0, 64, 64);
+        angelPigment = pigmentContext.getImageData(0, 0, 64, 64).data;
+      }
+      // Bake a compact monochrome relief from the crackled part of work 07.
+      // This runs once, and the original painting files remain untouched.
+      const wingSource = images[6] || pigmentSource;
+      const wingCanvas = document.createElement("canvas");
+      const wingSize = compactDevice ? 512 : 1024;
+      wingCanvas.width = wingCanvas.height = wingSize;
+      const wingContext = wingCanvas.getContext("2d", { willReadFrequently: true });
+      if (wingSource) {
+        wingContext.drawImage(wingSource, wingSource.naturalWidth * 0.38, wingSource.naturalHeight * 0.16,
+          wingSource.naturalWidth * 0.30, wingSource.naturalHeight * 0.58, 0, 0, wingSize, wingSize);
+        const detail = wingContext.getImageData(0, 0, wingSize, wingSize);
+        const original = new Uint8ClampedArray(detail.data);
+        const luminance = i => (original[i] * 0.2126 + original[i + 1] * 0.7152 + original[i + 2] * 0.0722);
+        for (let y = 0; y < wingSize; y += 1) for (let x = 0; x < wingSize; x += 1) {
+          const i = (y * wingSize + x) * 4;
+          const right = (y * wingSize + Math.min(wingSize - 1, x + 3)) * 4;
+          const down = (Math.min(wingSize - 1, y + 3) * wingSize + x) * 4;
+          const value = luminance(i);
+          const local = (luminance(right) + luminance(down)) * 0.5;
+          const relief = Math.max(0, Math.min(255, 128 + (value - 150) * 0.65 + (value - local) * 2.1));
+          detail.data[i] = detail.data[i + 1] = detail.data[i + 2] = relief;
+          detail.data[i + 3] = 255;
+        }
+        wingContext.putImageData(detail, 0, 0);
+      } else {
+        wingContext.fillStyle = "#808080";
+        wingContext.fillRect(0, 0, wingSize, wingSize);
+      }
+      wingTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, wingTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, wingCanvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      wingCanvas.width = wingCanvas.height = 1;
+      gl.activeTexture(gl.TEXTURE0);
       throneRings = compactDevice
         ? [makeThroneRing(26.9, 19, true, 0.86), makeThroneRing(36.9, 24, true), makeThroneRing(46.9, 20, true)]
         : [makeThroneRing(27.1, 29, false, 0.86), makeThroneRing(37.1, 38, false), makeThroneRing(47.1, 32, false)];
@@ -1592,6 +1961,30 @@
       throneLid = makeThroneLid(compactDevice);
       seraphim = makeSeraphim(compactDevice);
       seraphCore = makeSeraphCore(compactDevice);
+      newtBody = makeEyeNewt(compactDevice);
+      newtShellTexture = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, newtShellTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([120, 85, 60, 255]));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const newtReference = new Image();
+      newtReference.onload = () => {
+        const texture = document.createElement("canvas");
+        texture.width = texture.height = 512;
+        texture.getContext("2d").drawImage(newtReference, newtReference.naturalWidth * 0.73, newtReference.naturalHeight * 0.04,
+          newtReference.naturalWidth * 0.18, newtReference.naturalHeight * 0.22, 0, 0, 512, 512);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, newtShellTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture);
+        gl.activeTexture(gl.TEXTURE0);
+        newtShellTextureReady = true;
+      };
+      newtReference.src = "artwork/reference/sperm-eye-v1.png";
+      gl.activeTexture(gl.TEXTURE0);
       throneEyeTexture = gl.createTexture();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, throneEyeTexture);
@@ -1677,7 +2070,7 @@
       gl.uniform3f(sphereLocations.camera, camera[0], camera[1], camera[2]);
       gl.uniform1f(sphereLocations.yaw, yaw);
       gl.uniform1f(sphereLocations.pitch, pitch);
-      gl.uniform1f(sphereLocations.fov, Math.PI / 2.35);
+      gl.uniform1f(sphereLocations.fov, cameraFov);
       gl.uniform1f(sphereLocations.radius, radius);
       gl.uniform1f(sphereLocations.skyRadius, 650);
       gl.uniform1f(sphereLocations.renderLayer, 0);
@@ -1729,6 +2122,8 @@
     if (held.has("s") || held.has("arrowdown")) add(dirs.forward, -step);
     if (held.has("a") || held.has("arrowleft")) add(dirs.right, -step);
     if (held.has("d") || held.has("arrowright")) add(dirs.right, step);
+    add(dirs.right, joystickVector[0] * step);
+    add(dirs.forward, -joystickVector[1] * step);
     if (held.has("e") || held.has(" ")) movement[1] += step;
     if (held.has("q") || held.has("control")) movement[1] -= step;
     const magnitude = Math.hypot(...movement);
@@ -1738,8 +2133,447 @@
     const maxDistance = radius * 0.84;
     if (distance > maxDistance) next = next.map(value => value * (maxDistance / distance));
     camera = next;
-    const moved = Math.hypot(...camera);
-    positionLabel.textContent = moved < 0.5 ? "CENTRE" : `${(moved / radius * 100).toFixed(0)}% INTO THE SPHERE`;
+  }
+
+  function normalizeVector(v) {
+    const length = Math.hypot(...v) || 1;
+    return v.map(value => value / length);
+  }
+
+  function gapIsClear(surface, direction, lookAhead = 0) {
+    const reference = Math.abs(direction[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const tangent = normalizeVector([reference[1] * direction[2] - reference[2] * direction[1], reference[2] * direction[0] - reference[0] * direction[2], reference[0] * direction[1] - reference[1] * direction[0]]);
+    const up = [direction[1] * tangent[2] - direction[2] * tangent[1], direction[2] * tangent[0] - direction[0] * tangent[2], direction[0] * tangent[1] - direction[1] * tangent[0]];
+    for (const [a, b] of [[0, 0], [0.47, 0], [-0.47, 0], [0, 0.47], [0, -0.47]]) {
+      const point = surface.map((value, axis) => value + tangent[axis] * a + up[axis] * b);
+      const ray = normalizeVector(point.map((value, axis) => value - camera[axis]));
+      if (artworkAlongRay(ray, true, time + lookAhead) > 0.08) return false;
+    }
+    return true;
+  }
+
+  function findNaturalGap(position) {
+    let best = null, bestDistance = Infinity;
+    const count = 1200, goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < count; i += 1) {
+      const y = 1 - 2 * (i + 0.5) / count;
+      const ring = Math.sqrt(1 - y * y), angle = i * goldenAngle;
+      const direction = [ring * Math.cos(angle), y, ring * Math.sin(angle)];
+      const surface = [direction[0] * radius, direction[1] * radius * 1.12, direction[2] * radius];
+      const centerRay = normalizeVector(surface.map((value, axis) => value - camera[axis]));
+      if (artworkAlongRay(centerRay, true) > 0.08 || !gapIsClear(surface, direction) || !gapIsClear(surface, direction, 2.5)) continue;
+      const distance = Math.hypot(...surface.map((value, axis) => value - position[axis]));
+      if (distance < bestDistance) { best = { surface, direction }; bestDistance = distance; }
+    }
+    return best;
+  }
+
+  function gapOpenForPassage(surface, direction) {
+    return [0, 0.5, 1, 1.5, 2, 2.5].every(offset => gapIsClear(surface, direction, offset));
+  }
+
+  function updateEyeNewt(now) {
+    if (newtStart === null || !experienceStarted || !entry.classList.contains("leaving")) { visitorFact.hidden = true; return null; }
+    const elapsed = (now - newtStart) / 1000;
+    if (!newtAgent) newtAgent = { phase: "seek", position: [0, 2, -180], velocity: [0, 0, 0], entryPose: 0, lastNow: now, nextSearch: now, target: null };
+    const agent = newtAgent;
+    const dt = Math.min(0.05, Math.max(0, (now - agent.lastNow) / 1000));
+    agent.lastNow = now;
+    const moveToward = (target, speed) => {
+      const offset = target.map((value, axis) => value - agent.position[axis]);
+      const distance = Math.hypot(...offset);
+      if (distance > 0.0001) {
+        // Ease into turns and slow down as he reaches a target, instead of
+        // snapping instantly from one direction to the next.
+        const desiredSpeed = speed * Math.min(1, distance / 2.0);
+        const blend = 1 - Math.exp(-4.5 * dt);
+        agent.velocity = agent.velocity.map((value, axis) => value + (offset[axis] / distance * desiredSpeed - value) * blend);
+        const step = agent.velocity.map(value => value * dt);
+        if (step.reduce((sum, value, axis) => sum + value * offset[axis], 0) >= distance * distance) {
+          agent.position = target.slice();
+          agent.velocity = [0, 0, 0];
+        } else {
+          agent.position = agent.position.map((value, axis) => value + step[axis]);
+        }
+      }
+      return distance;
+    };
+    if (agent.phase === "seek") {
+      // A long, measured journey towards the shell; wait for a genuine gap.
+      const approach = Math.min(1, elapsed / 55);
+      const orbitRadius = 180 - approach * 161;
+      const angle = 0.12 + elapsed * 0.006;
+      const orbitTarget = [Math.sin(angle) * orbitRadius, Math.sin(elapsed * 0.16) * 1.2 + 2.5, -Math.cos(angle) * orbitRadius];
+      if (elapsed < 55) agent.position = orbitTarget;
+      else moveToward(orbitTarget, 3);
+      if (elapsed >= 55 && now >= agent.nextSearch) {
+        agent.nextSearch = now + 900;
+        agent.target = findNaturalGap(agent.position);
+        if (agent.target) agent.phase = "approach";
+      }
+    } else if (agent.phase === "approach") {
+      const { surface, direction } = agent.target;
+      const outside = surface.map((value, axis) => value + direction[axis] * 1.2);
+      if (now >= agent.nextSearch) {
+        agent.nextSearch = now + 600;
+        if (!gapIsClear(surface, direction) || !gapIsClear(surface, direction, 2.5)) { agent.phase = "seek"; agent.target = null; }
+      }
+      if (agent.phase === "approach" && moveToward(outside, 9) < 0.08 && agent.entryPose > 0.96 && gapOpenForPassage(surface, direction)) {
+        agent.position = outside;
+        agent.velocity = [0, 0, 0];
+        agent.phase = "cross";
+        agent.crossStart = now;
+      }
+    } else if (agent.phase === "cross") {
+      const progress = Math.min(1, (now - agent.crossStart) / 2200);
+      if (!gapIsClear(agent.target.surface, agent.target.direction)) {
+        agent.phase = "retreat";
+      } else {
+        const easedProgress = progress * progress * (3 - 2 * progress);
+        const offset = 1.2 - 2.4 * easedProgress;
+        agent.position = agent.target.surface.map((value, axis) => value + agent.target.direction[axis] * offset);
+        if (progress >= 1) agent.phase = "inside";
+      }
+    } else if (agent.phase === "retreat") {
+      const outside = agent.target.surface.map((value, axis) => value + agent.target.direction[axis] * 1.2);
+      if (moveToward(outside, 7) < 0.1) { agent.phase = "seek"; agent.target = null; }
+    } else if (agent.phase === "inside") {
+      const dirs = basis();
+      const hover = Math.sin(time * 1.3) * 0.09 + Math.sin(time * 0.57) * 0.035;
+      // Derive the offset from the view so the visitor stays in the lower
+      // right on portrait phones as well as widescreen displays.
+      const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+      const halfHeight = 3.8 * Math.tan(cameraFov / 2);
+      const rightOffset = Math.min(1.8, halfHeight * aspect * 0.65);
+      const target = camera.map((value, axis) => value + dirs.forward[axis] * 3.8 + dirs.right[axis] * rightOffset + dirs.up[axis] * (-halfHeight * 0.58 + hover));
+      const distance = moveToward(target, 6);
+      if (elapsed >= 60 && distance < 0.65 && visitorArrivedAt === null) visitorArrivedAt = now;
+    }
+    const showFact = visitorArrivedAt !== null && agent.phase === "inside" && !dialog.open && !eyeOffer.open && entry.classList.contains("leaving");
+    if (showFact) {
+      const sinceArrival = Math.max(0, (now - visitorArrivedAt) / 1000);
+      const factNumber = Math.floor(sinceArrival / 40);
+      if (factNumber !== visitorFactIndex) {
+        visitorFactIndex = factNumber;
+        visitorFact.textContent = visitorFacts[factNumber % visitorFacts.length];
+      }
+      // Project the visitor's actual world position into screen coordinates,
+      // so the words travel with him instead of sticking to a screen corner.
+      const dirs = basis();
+      const offset = agent.position.map((value, axis) => value - camera[axis]);
+      const depth = offset.reduce((sum, value, axis) => sum + value * dirs.forward[axis], 0);
+      const horizontal = offset.reduce((sum, value, axis) => sum + value * dirs.right[axis], 0);
+      const vertical = offset.reduce((sum, value, axis) => sum + value * dirs.up[axis], 0);
+      const rect = canvas.getBoundingClientRect();
+      const scale = Math.tan(cameraFov / 2);
+      const screenX = rect.left + rect.width / 2 + horizontal / Math.max(depth, 0.001) / scale * rect.height / 2;
+      const screenY = rect.top + rect.height / 2 - vertical / Math.max(depth, 0.001) / scale * rect.height / 2;
+      const inView = depth > 0.5 && screenX >= rect.left && screenX <= rect.right && screenY >= rect.top && screenY <= rect.bottom;
+      const halfLabel = Math.min(130, rect.width * 0.27);
+      visitorFact.style.left = `${Math.max(rect.left + halfLabel, Math.min(rect.right - halfLabel, screenX))}px`;
+      visitorFact.style.top = `${Math.max(rect.top + 70, screenY - 25)}px`;
+      visitorFact.hidden = !inView || sinceArrival % 40 >= 10;
+    } else visitorFact.hidden = true;
+    const desiredPose = ["approach", "cross", "retreat"].includes(agent.phase) ? 1 : 0;
+    agent.entryPose += (desiredPose - agent.entryPose) * (1 - Math.exp(-3.5 * dt));
+    const ray = normalizeVector(agent.position.map((value, axis) => value - camera[axis]));
+    return { ray, position: agent.position, entryPose: agent.entryPose };
+  }
+
+  function translationMatrix(x, y, z) {
+    return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+  }
+
+  function drawEyeNewt(state, foreground) {
+    if (!state || dialog.open || !newtBody) return;
+    const dirs = basis();
+    const normal = state.ray.map(value => -value);
+    let right = [normal[2] * -1, 0, normal[0]];
+    const rightLength = Math.hypot(...right) || 1;
+    right = right.map(value => value / rightLength);
+    const up = [normal[1] * right[2] - normal[2] * right[1], normal[2] * right[0] - normal[0] * right[2], normal[0] * right[1] - normal[1] * right[0]];
+    const position = state.position;
+    const frame = throneFrame(position, right, up, normal);
+    // Small turns expose the volume of the head and tail instead of keeping
+    // the creature like a flat image facing the viewer at all times.
+    const roll = 0.12 + Math.sin(time * 1.75) * 0.10 + Math.sin(time * 0.57) * 0.04;
+    const tilt = Math.sin(time * 1.15 + 0.7) * 0.12;
+    const turn = 0.20 + Math.sin(time * 0.93) * 0.20;
+    const bodyFrame = matrixMultiply(frame, matrixMultiply(rotationMatrix(tilt, turn, roll), scaleMatrix(0.72)));
+    const viewProjection = matrixMultiply(throneProjectionMatrix(), throneViewMatrix(dirs));
+    // Match Throne's near depth range, retaining its depth across both passes.
+    gl.depthRange(0, 0.45);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.CULL_FACE);
+    gl.useProgram(throneProgram);
+    gl.uniformMatrix4fv(throneLocations.viewProjection, false, viewProjection);
+    gl.uniform3f(throneLocations.camera, ...camera);
+    gl.uniform3f(throneLocations.light, 4, 8, -6);
+    gl.uniform1i(throneLocations.eyeTexture, 1);
+    gl.uniform1f(throneLocations.ringRadius, 0);
+    gl.uniform1f(throneLocations.bandHalfWidth, 0);
+    gl.uniform1f(throneLocations.seraphWrap, 0);
+    gl.uniform1f(throneLocations.seraphEyeWrap, 0);
+    gl.uniform1f(throneLocations.eyeUvScale, 1);
+    gl.uniform1f(throneLocations.featherDetail, 0);
+    gl.uniform1f(throneLocations.newtTime, time);
+    gl.uniform1f(throneLocations.newtEntry, state.entryPose);
+    gl.uniform1f(throneLocations.newtPanelPass, foreground ? 2 : 1);
+    gl.uniform1f(throneLocations.newtPanelRadius, radius);
+    gl.uniform1i(throneLocations.newtShellTexture, 2);
+    const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
+    for (const loc of [throneLocations.position, throneLocations.normal, throneLocations.color]) gl.enableVertexAttribArray(loc);
+    const draw = (mesh, model, gain, eye = false) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
+      gl.vertexAttribPointer(throneLocations.position, 3, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribPointer(throneLocations.normal, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
+      gl.vertexAttribPointer(throneLocations.color, 3, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
+      gl.uniformMatrix4fv(throneLocations.model, false, model);
+      gl.uniformMatrix4fv(throneLocations.mvp, false, matrixMultiply(viewProjection, model));
+      gl.uniform1f(throneLocations.renderGain, gain);
+      gl.uniform1f(throneLocations.eyeTextureReady, eye && seraphEyeTextureReady ? 1 : 0);
+      gl.uniform1f(throneLocations.seraphBlink, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+    };
+    const part = (x, y, z, angle, size) => matrixMultiply(bodyFrame, matrixMultiply(translationMatrix(x, y, z), matrixMultiply(rotationMatrix(0, 0, angle), scaleMatrix(size))));
+    gl.uniform1f(throneLocations.newtAnimated, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, newtShellTexture);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1f(throneLocations.newtShell, 1);
+    draw(newtBody, bodyFrame, 1.10);
+    gl.uniform1f(throneLocations.newtAnimated, 0);
+    gl.uniform1f(throneLocations.newtShell, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, seraphEyeTexture);
+    gl.activeTexture(gl.TEXTURE0);
+    draw(seraphEye, part(0, 0, 0.53, 0, 0.38), 0.75, true);
+    gl.uniform1f(throneLocations.newtPanelPass, 0);
+    gl.depthRange(0, 1);
+    gl.disable(gl.DEPTH_TEST);
+  }
+
+  // Quarter-circle arcs are laid out in adjacent Fibonacci squares.  The
+  // sample points retain their true relative radii before a uniform scale is
+  // applied to fit the currently visible part of the very large spiral.
+  function fibonacciSpiralWindow(page, full = false) {
+    const radii = [1, ...offeringAmounts];
+    const arcs = [];
+    let endpoint = [1, 0];
+    radii.forEach((radiusValue, index) => {
+      const start = index * Math.PI / 2;
+      const center = [endpoint[0] - radiusValue * Math.cos(start), endpoint[1] - radiusValue * Math.sin(start)];
+      const samples = [];
+      for (let segment = 0; segment <= 16; segment += 1) {
+        const angle = start + segment * Math.PI / 32;
+        samples.push([center[0] + radiusValue * Math.cos(angle), center[1] + radiusValue * Math.sin(angle)]);
+      }
+      endpoint = samples[samples.length - 1];
+      arcs.push(samples);
+    });
+    const start = full ? 0 : page * 5;
+    const selected = arcs.slice(start + 1, full ? undefined : start + 6);
+    const all = selected.flat();
+    const minX = Math.min(...all.map(p => p[0])), maxX = Math.max(...all.map(p => p[0]));
+    const minY = Math.min(...all.map(p => p[1])), maxY = Math.max(...all.map(p => p[1]));
+    // Anchor the full spiral on its first two coin stars and give them enough
+    // angular separation to aim at without zooming. The outer arcs extend
+    // much farther across the sky rather than compressing the inner spiral.
+    const factor = full ? 0.025 : 1.32 / Math.max(maxX - minX, maxY - minY);
+    const middleX = full ? 0 : (minX + maxX) / 2;
+    const middleY = full ? -1 : (minY + maxY) / 2;
+    const map = p => [(p[0] - middleX) * factor, (p[1] - middleY) * factor];
+    return selected.map((arc, index) => ({ index: start + index, value: offeringAmounts[start + index], points: arc.map(map) }));
+  }
+
+  function skyAxes(direction) {
+    const reference = Math.abs(direction[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
+    const right = normalizeVector([reference[1] * -direction[2] + reference[2] * direction[1],
+      reference[2] * -direction[0] + reference[0] * direction[2], reference[0] * -direction[1] + reference[1] * direction[0]]);
+    const up = [right[1] * direction[2] - right[2] * direction[1], right[2] * direction[0] - right[0] * direction[2], right[0] * direction[1] - right[1] * direction[0]];
+    return { right, up };
+  }
+
+  function skyDirection(center, axes, point) {
+    return normalizeVector(center.map((value, axis) => value + axes.right[axis] * point[0] + axes.up[axis] * point[1]));
+  }
+
+  function ringObstructsSky(ray) {
+    if (!throneRings.length) return false;
+    const assembly = rotationMatrix(0.10, time * 0.0005625, -0.06);
+    const speeds = [0.0024, -0.0020, 0.0018];
+    const tilts = [[1.48, 0], [1.48, 1.05], [1.34, -1.05]];
+    return throneRings.some((ring, index) => {
+      const speed = speeds[index], tilt = tilts[index];
+      const rotation = matrixMultiply(assembly, rotationMatrix(tilt[0] + time * speed, tilt[1] - time * speed * 0.61, time * speed * 1.7));
+      const normal = transformPoint(rotation, [0, 0, 1]);
+      const b = camera.reduce((sum, value, axis) => sum + value * ray[axis], 0);
+      const c = camera.reduce((sum, value) => sum + value * value, 0) - ring.radius * ring.radius;
+      const distance = -b + Math.sqrt(Math.max(0, b * b - c));
+      const point = camera.map((value, axis) => value + ray[axis] * distance);
+      return Math.abs(point.reduce((sum, value, axis) => sum + value * normal[axis], 0)) < 4.3;
+    });
+  }
+
+  function seraphSkyOcclusion() {
+    if (!seraphim || !seraphim.occlusionPositions) return { cones: [], eye: [0, 1, 0], eyeLimit: 2 };
+    const approach = seraphProgress();
+    const wrap = approach * approach * (3 - 2 * approach);
+    const orbit = 0.22 + time * 0.0035;
+    const radius = 63450 - 53450 * wrap;
+    const horizontal = radius * Math.SQRT1_2;
+    const position = [Math.sin(orbit) * horizontal, horizontal, -Math.cos(orbit) * horizontal];
+    const inward = position.map(value => -value / radius);
+    const axes = skyAxes(inward);
+    axes.up = axes.up.map(value => -value);
+    const source = seraphim.occlusionPositions;
+    const transform = offset => {
+      const x = source[offset], y = source[offset + 1], z = source[offset + 2];
+      const world = position.map((value, axis) => value + 1200 * (axes.right[axis] * x + axes.up[axis] * y + inward[axis] * z));
+      if (wrap <= 0.001) return normalizeVector(world.map((value, axis) => value - camera[axis]));
+      const longitude = Math.max(-1, Math.min(1, x / 36)) * 3.08;
+      const latitude = Math.max(-1, Math.min(1, y / 29)) * 1.53;
+      const c = Math.cos(latitude), start = normalizeVector(world);
+      const wrapped = normalizeVector(start.map((_, axis) => axes.right[axis] * Math.sin(longitude) * c
+        + axes.up[axis] * Math.sin(latitude) - inward[axis] * Math.cos(longitude) * c));
+      const direction = normalizeVector(start.map((value, axis) => value * (1 - wrap) + wrapped[axis] * wrap));
+      const distance = Math.max(6800, Math.hypot(...world) * (1 - wrap) + (7200 + z * 100) * wrap);
+      return normalizeVector(direction.map((value, axis) => value * distance - camera[axis]));
+    };
+    const cones = [];
+    // Each feather quad has two triangles (six vertices); bound all four
+    // corners by one conservative angular cone rather than testing each mesh
+    // triangle while the scene is animating.
+    for (let offset = 0; offset + 17 < source.length; offset += 18) {
+      const corners = [transform(offset), transform(offset + 3), transform(offset + 6), transform(offset + 15)];
+      const center = normalizeVector([0, 1, 2].map(axis => corners.reduce((sum, p) => sum + p[axis], 0)));
+      let limit = 1;
+      corners.forEach(p => { limit = Math.min(limit, center.reduce((sum, value, axis) => sum + value * p[axis], 0)); });
+      cones.push(center[0], center[1], center[2], Math.max(-0.1, limit - 0.002));
+    }
+    const eyePosition = position.map((value, axis) => value + inward[axis] * 3960 - camera[axis]);
+    return { cones, eye: normalizeVector(eyePosition), eyeLimit: Math.cos(0.18 + wrap * 0.78) };
+  }
+
+  function seraphObstructsSky(ray, occlusion) {
+    if (ray.reduce((sum, value, axis) => sum + value * occlusion.eye[axis], 0) > occlusion.eyeLimit) return true;
+    for (let i = 0; i < occlusion.cones.length; i += 4) {
+      if (ray[0] * occlusion.cones[i] + ray[1] * occlusion.cones[i + 1] + ray[2] * occlusion.cones[i + 2] > occlusion.cones[i + 3]) return true;
+    }
+    return false;
+  }
+
+  function buildConstellationGeometry() {
+    if (!constellationDirection || !constellationProgram || !constellationBuffer) return;
+    const arcs = fibonacciSpiralWindow(0, true);
+    const axes = { right: constellationRight, up: constellationUp };
+    const data = [];
+    const append = (direction, index) => data.push(direction[0], direction[1], direction[2], index);
+    arcs.forEach(arc => {
+      for (let i = 1; i < arc.points.length; i += 1) {
+        append(skyDirection(constellationDirection, axes, arc.points[i - 1]), -2);
+        append(skyDirection(constellationDirection, axes, arc.points[i]), -2);
+      }
+    });
+    constellationLineCount = data.length / 4;
+    constellationStars = arcs.map((arc, index) => ({ index: arc.index, value: arc.value,
+      direction: skyDirection(constellationDirection, axes, arc.points[arc.points.length - 1]), slot: index }));
+    constellationStars.forEach((star, slot) => append(star.direction, slot));
+    gl.bindBuffer(gl.ARRAY_BUFFER, constellationBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+    // Labels share the same sky layer and depth test as the stars.
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 128; labelCanvas.height = 64 * constellationStars.length;
+    const context = labelCanvas.getContext("2d");
+    context.fillStyle = "#f3ddba"; context.font = "24px Georgia, serif";
+    context.textAlign = "center"; context.textBaseline = "middle";
+    constellationStars.forEach((star, slot) => context.fillText(`£${star.value}`, 64, slot * 64 + 49));
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, constellationLabelTexture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, labelCanvas);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  function updateConstellationView() {
+    const visible = !!constellationDirection && experienceStarted && entry.classList.contains("leaving") && !dialog.open && !eyeOffer.open;
+    if (!visible) { focusedStar = -1; starPrompt.hidden = true; return; }
+    const dirs = basis(), width = window.innerWidth, height = window.innerHeight;
+    const scale = Math.tan(cameraFov / 2);
+    let nearest = -1, nearestDot = Math.cos(Math.min(0.075, cameraFov * 0.09));
+    constellationStars.forEach((star, slot) => {
+      const depth = star.direction.reduce((sum, value, axis) => sum + value * dirs.forward[axis], 0);
+      if (depth > nearestDot) { nearest = slot; nearestDot = depth; }
+    });
+    if (nearest >= 0 && artworkAlongRay(constellationStars[nearest].direction, true) > 0.85) nearest = -1;
+    focusedStar = nearest;
+    starPrompt.hidden = nearest < 0;
+    if (nearest >= 0) starPrompt.textContent = `£${constellationStars[nearest].value} · ${mouseCamera ? "CLICK OR ENTER" : "TAP"} TO CHOOSE · ${mouseCamera ? "SCROLL" : "PINCH"} TO LOOK CLOSER`;
+  }
+
+  function drawConstellation() {
+    if (!constellationDirection || !constellationStars.length || !experienceStarted || !entry.classList.contains("leaving")) return;
+    const dirs = basis(), loc = constellationLocations;
+    gl.useProgram(constellationProgram);
+    gl.bindBuffer(gl.ARRAY_BUFFER, constellationBuffer);
+    gl.enableVertexAttribArray(loc.position); gl.enableVertexAttribArray(loc.index);
+    gl.vertexAttribPointer(loc.position, 3, gl.FLOAT, false, 16, 0);
+    gl.vertexAttribPointer(loc.index, 1, gl.FLOAT, false, 16, 12);
+    gl.uniform3f(loc.forward, ...dirs.forward); gl.uniform3f(loc.right, ...dirs.right); gl.uniform3f(loc.up, ...dirs.up);
+    gl.uniform1f(loc.aspect, canvas.width / canvas.height);
+    gl.uniform1f(loc.scale, Math.tan(cameraFov / 2));
+    gl.uniform1f(loc.pointSize, 24 * canvas.width / Math.max(1, window.innerWidth));
+    gl.uniform1f(loc.focus, focusedStar);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.uniform1f(loc.points, 0); gl.drawArrays(gl.LINES, 0, constellationLineCount);
+    gl.uniform1f(loc.points, 1); gl.drawArrays(gl.POINTS, constellationLineCount, constellationStars.length);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, constellationLabelTexture);
+    gl.uniform1i(loc.labels, 4);
+    gl.uniform1f(loc.pointSize, 72 * canvas.width / Math.max(1, window.innerWidth));
+    gl.uniform1f(loc.points, 2); gl.drawArrays(gl.POINTS, constellationLineCount, constellationStars.length);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.disable(gl.BLEND);
+  }
+
+  function openConstellation(guideCamera = false) {
+    if (constellationDirection) return;
+    // Keep the inner stars high overhead, nudged away from the direction
+    // Seraphim approaches, without shifting the camera or the stars themselves.
+    const approachAngle = 0.22 + ((seraphApproachStart === null ? time : seraphApproachStart) + 120) * 0.0035;
+    const tilt = 0.23;
+    constellationDirection = [-Math.sin(approachAngle) * Math.sin(tilt), Math.cos(tilt), Math.cos(approachAngle) * Math.sin(tilt)];
+    const axes = skyAxes(constellationDirection);
+    constellationRight = axes.right;
+    constellationUp = axes.up;
+    buildConstellationGeometry();
+    constellationGuide = null;
+  }
+
+  function chooseConstellationStar(slot) {
+    const star = constellationStars[slot];
+    if (!star || eyeOffer.open || dialog.open) return;
+    offeringIndex = star.index;
+    customOfferingPence = null;
+    document.getElementById("custom-offering").value = "";
+    document.getElementById("custom-offering").setCustomValidity("");
+    updateOffering();
+    releaseCameraMouse();
+    eyeOffer.show();
+  }
+
+  function releaseCameraMouse() {
+    fallbackMouseLook = false;
+    canvas.classList.remove("mouse-camera");
+    lookHint.textContent = mouseCamera ? "CLICK TO LOOK" : "DRAG TO LOOK";
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
   }
 
   function render(now = 0) {
@@ -1780,8 +2614,21 @@
     const delta = Math.min((now - lastFrame) / 1000 || 0, 0.04);
     lastFrame = now;
     time += delta;
+    cameraFov += (targetFov - cameraFov) * (1 - Math.exp(-10 * delta));
+    if (constellationGuide && !pointerStart) {
+      const progress = Math.min(1, (now - constellationGuide.start) / 1800);
+      const eased = progress * progress * (3 - 2 * progress);
+      pitch = constellationGuide.from + (constellationGuide.to - constellationGuide.from) * eased;
+      const yawDelta = Math.atan2(Math.sin(constellationGuide.toYaw - constellationGuide.fromYaw), Math.cos(constellationGuide.toYaw - constellationGuide.fromYaw));
+      yaw = constellationGuide.fromYaw + yawDelta * eased;
+      if (progress >= 1) constellationGuide = null;
+    }
     if (experienceStarted && seraphApproachStart === null) seraphApproachStart = time;
+    if (experienceStarted && !constellationDirection && entry.classList.contains("leaving")) openConstellation(false);
+    if (experienceStarted && newtStart === null) newtStart = now;
     moveCamera(delta);
+    newtState = updateEyeNewt(now);
+    updateConstellationView();
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
     gl.enableVertexAttribArray(skyPositionAttribute);
@@ -1791,12 +2638,15 @@
     gl.uniform3f(sphereLocations.camera, camera[0], camera[1], camera[2]);
     gl.uniform1f(sphereLocations.yaw, yaw);
     gl.uniform1f(sphereLocations.pitch, pitch);
+    gl.uniform1f(sphereLocations.fov, cameraFov);
     gl.uniform1f(sphereLocations.time, time);
     gl.uniform1f(sphereLocations.renderLayer, 0);
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    drawConstellation();
     drawThrone();
+    drawEyeNewt(newtState, false);
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuffer);
     gl.enableVertexAttribArray(skyPositionAttribute);
@@ -1806,16 +2656,17 @@
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disable(gl.BLEND);
+    drawEyeNewt(newtState, true);
     requestAnimationFrame(render);
   }
 
   document.querySelector(".identity").addEventListener("click", event => {
     event.preventDefault();
     if (!experienceStarted) return;
+    releaseCameraMouse();
     entry.classList.remove("leaving");
     hint.hidden = true;
     controls.hidden = true;
-    document.getElementById("position").hidden = true;
   });
 
   enterButton.addEventListener("click", () => {
@@ -1823,15 +2674,141 @@
     entry.classList.add("leaving");
     hint.hidden = false;
     controls.hidden = false;
-    document.getElementById("position").hidden = false;
     backgroundMusic.volume = 0.22;
     backgroundMusic.play().catch(() => {});
   });
 
+  const conversationSteps = [...document.querySelectorAll("[data-offer-step]")];
+  function showConversationStep(name) {
+    conversationSteps.forEach(step => { step.hidden = step.dataset.offerStep !== name; });
+    eyeOffer.scrollTop = 0;
+    const firstChoice = eyeOffer.querySelector(`[data-offer-step="${name}"] button:not(:disabled)`);
+    if (firstChoice) firstChoice.focus({ preventScroll: true });
+  }
+  eyeOffer.querySelectorAll("[data-offer-next]").forEach(button => {
+    button.addEventListener("click", () => {
+      const input = document.getElementById("custom-offering");
+      if (button.dataset.offerNext === "currency" && !input.checkValidity()) { input.reportValidity(); return; }
+      showConversationStep(button.dataset.offerNext);
+    });
+  });
+  const customOfferingInput = document.getElementById("custom-offering");
+  customOfferingInput.addEventListener("input", () => {
+    const value = customOfferingInput.value;
+    const valid = value === "" || (/^\d+(?:\.\d{1,2})?$/.test(value) && Number(value) >= 1 && Number(value) <= 9999.99);
+    customOfferingInput.setCustomValidity(valid ? "" : "Choose an amount from £1 to £9,999.99, with up to two decimal places.");
+    customOfferingPence = value && valid ? Math.round(Number(value) * 100) : null;
+    updateOffering();
+  });
+  function updateOffering() {
+    const pounds = customOfferingPence === null ? offeringAmounts[offeringIndex] : customOfferingPence / 100;
+    const totalPounds = pounds;
+    const amount = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: Number.isInteger(pounds) ? 0 : 2 }).format(pounds);
+    document.getElementById("offering-value").textContent = customOfferingPence === null ? `${pounds} ${pounds === 1 ? "coin" : "coins"} · ${amount}` : `Your offering · ${amount}`;
+    if (constellationDirection) buildConstellationGeometry();
+    const currency = offeringCurrency;
+    const estimate = document.getElementById("currency-estimate");
+    const total = document.getElementById("offering-total");
+    document.getElementById("currency-pounds").textContent = amount;
+    document.getElementById("currency-caption").textContent = currency;
+    document.getElementById("currency-selected-coin").src = `artwork/currencies/${currency}.svg?v=coins-163`;
+    document.querySelectorAll("#currency-tokens button").forEach(button => {
+      const selected = button.dataset.currency === currency;
+      button.setAttribute("aria-checked", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    if (currency === "GBP") {
+      estimate.textContent = amount;
+      total.textContent = amount;
+    } else if (offeringRates && offeringRates[currency]) {
+      const digits = ["HUF", "JPY", "TWD"].includes(currency) ? 0 : 2;
+      const converted = new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(totalPounds * offeringRates[currency]);
+      estimate.textContent = converted;
+      total.textContent = `${amount} (approximately ${converted})`;
+    } else {
+      estimate.textContent = offeringRatesPending ? "Finding rate…" : "Rate unavailable";
+      total.textContent = amount;
+    }
+  }
+  async function loadOfferingRates() {
+    if (offeringRates || offeringRatesPending) return;
+    offeringRatesPending = true;
+    updateOffering();
+    try {
+      const response = await fetch("https://api.frankfurter.dev/v1/latest?base=GBP");
+      if (!response.ok) throw new Error("rate unavailable");
+      const data = await response.json();
+      offeringRates = data.rates;
+      offeringRateDate = data.date;
+      Object.keys(offeringRates).forEach(code => { offeringRateDates[code] = data.date; });
+    } catch (_) {
+      // Keep the GBP scale usable if the rate service is unavailable.
+    } finally {
+      offeringRatesPending = false;
+      updateOffering();
+    }
+  }
+  async function loadSelectedOfferingRate(currency) {
+    if (!offeringRates) await loadOfferingRates();
+    if (!offeringRates || offeringRates[currency] || currency === "GBP" || offeringRatesPending) return;
+    offeringRatesPending = true;
+    updateOffering();
+    try {
+      const response = await fetch(`https://api.frankfurter.dev/v2/rate/GBP/${encodeURIComponent(currency)}`);
+      if (!response.ok) throw new Error("rate unavailable");
+      const data = await response.json();
+      if (!Number.isFinite(data.rate) || data.rate <= 0) throw new Error("invalid rate");
+      offeringRates[currency] = data.rate;
+      offeringRateDates[currency] = data.date;
+    } catch (_) {
+      // An unavailable reference rate does not affect any GBP selection.
+    } finally {
+      offeringRatesPending = false;
+      updateOffering();
+    }
+  }
+  const currencyTokens = document.getElementById("currency-tokens");
+  offeringCurrencies.forEach(currency => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.currency = currency;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-label", currency);
+    const image = document.createElement("img");
+    image.src = `artwork/currencies/${currency}.svg?v=coins-163`;
+    image.alt = "";
+    button.appendChild(image);
+    const code = document.createElement("span");
+    code.className = "currency-token-code";
+    code.textContent = currency;
+    button.appendChild(code);
+    button.addEventListener("click", () => {
+      offeringCurrency = currency;
+      updateOffering();
+      if (currency !== "GBP") loadSelectedOfferingRate(currency);
+    });
+    currencyTokens.appendChild(button);
+  });
+  currencyTokens.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = offeringCurrencies.indexOf(offeringCurrency);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? offeringCurrencies.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + offeringCurrencies.length) % offeringCurrencies.length;
+    const button = currencyTokens.children[next];
+    button.focus();
+    button.click();
+  });
+  updateOffering();
+  document.getElementById("eye-offer-close").addEventListener("click", () => eyeOffer.close());
+  document.getElementById("eye-offer-dismiss").addEventListener("click", () => eyeOffer.close());
+  eyeOffer.addEventListener("click", event => { if (event.target === eyeOffer) eyeOffer.close(); });
+  eyeOffer.addEventListener("close", () => { constellationGuide = null; showConversationStep("offering"); });
+
   function rayForScreen(x, y) {
     const rect = canvas.getBoundingClientRect();
     const aspect = rect.width / rect.height;
-    const scale = Math.tan((Math.PI / 2.35) / 2);
+    const scale = Math.tan(cameraFov / 2);
     const screenX = ((x - rect.left) / rect.width * 2 - 1) * aspect * scale;
     const screenY = (1 - (y - rect.top) / rect.height * 2) * scale;
     const dirs = basis();
@@ -1844,9 +2821,11 @@
     return ray.map(value => value / rayLength);
   }
 
-  function artworkAt(x, y) {
-    const ray = rayForScreen(x, y);
-    const rect = canvas.getBoundingClientRect();
+  function artworkAt(x, y, coverageOnly = false) {
+    return artworkAlongRay(rayForScreen(x, y), coverageOnly);
+  }
+
+  function artworkAlongRay(ray, coverageOnly = false, sampleTime = time) {
     const panelHalfWidth = 0.68;
     const panelHalfHeight = panelHalfWidth * (2 / 3);
     const podY = 1.12;
@@ -1859,12 +2838,15 @@
     const localHit = localCamera.map((value, axis) => value + localRay[axis] * distance);
     let closestWork = -1;
     let closestDistance = Infinity;
+    let secondDistance = Infinity;
+    let firstOpacity = 0, secondOpacity = 0;
+    const smooth = (a, b, n) => { const t = Math.max(0, Math.min(1, (n - a) / (b - a))); return t * t * (3 - 2 * t); };
     for (let index = 0; index < 36; index += 1) {
       const column = index % 6;
       const row = Math.floor(index / 6);
       const baseLongitude = (column - 1) * Math.PI / 3 - Math.PI / 2;
       const baseLatitude = 1.31 - row * 0.524;
-      const travel = time * 0.01225 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
+      const travel = sampleTime * 0.01225 * (1 + 0.02 * Math.sin(index * 1.7)) + index * 0.001;
       const latitude = baseLatitude - travel;
       const longitude = baseLongitude - travel * 0.72;
       const center = [Math.cos(latitude) * Math.cos(longitude), Math.sin(latitude), Math.cos(latitude) * Math.sin(longitude)];
@@ -1882,36 +2864,110 @@
       const panelOffset = panelHit.map((value, axis) => value - panelPosition[axis]);
       const px = (panelOffset[0] * tangentRight[0] + panelOffset[1] * tangentRight[1] + panelOffset[2] * tangentRight[2]) / radius / panelHalfWidth;
       const py = (panelOffset[0] * tangentUp[0] + panelOffset[1] * tangentUp[1] + panelOffset[2] * tangentUp[2]) / radius / panelHalfHeight;
-      if (Math.abs(px) <= 1 && Math.abs(py) <= 1 && panelDistance < closestDistance) {
-        closestDistance = panelDistance;
-        closestWork = index % 12;
+      if (Math.abs(px) <= 1 && Math.abs(py) <= 1) {
+        const opacity = (1 - smooth(0.66, 1, Math.abs(px))) * (1 - smooth(0.66, 1, Math.abs(py)))
+          * smooth(0, 0.34, Math.abs(Math.cos(latitude)));
+        if (panelDistance < closestDistance) {
+          secondDistance = closestDistance;
+          secondOpacity = firstOpacity;
+          closestDistance = panelDistance;
+          firstOpacity = opacity;
+          closestWork = index % 12;
+        } else if (panelDistance < secondDistance) {
+          secondDistance = panelDistance;
+          secondOpacity = opacity;
+        }
       }
     }
-    return closestWork;
+    return coverageOnly ? 1 - (1 - firstOpacity) * (1 - secondOpacity) : closestWork;
   }
 
   canvas.addEventListener("pointerdown", event => {
     if (!entry.classList.contains("leaving") || dialog.open) return;
+    constellationGuide = null;
+    if (event.pointerType === "touch") {
+      skyPointers.set(event.pointerId, [event.clientX, event.clientY]);
+      canvas.setPointerCapture(event.pointerId);
+      if (skyPointers.size >= 2) {
+        const [a, b] = [...skyPointers.values()];
+        skyPinch = { distance: Math.hypot(a[0] - b[0], a[1] - b[1]), fov: targetFov };
+        skyPinchUsed = true;
+        pointerStart = null;
+        return;
+      }
+    }
+    if (event.pointerType === "mouse" && mouseCamera) {
+      if (document.pointerLockElement !== canvas && !fallbackMouseLook) {
+        if (!canLockMouse) {
+          fallbackMouseLook = true;
+          canvas.classList.add("mouse-camera");
+          lookHint.textContent = "MOVE MOUSE TO LOOK";
+        } else {
+          const activateFallback = () => {
+            canLockMouse = false; fallbackMouseLook = true;
+            canvas.classList.add("mouse-camera"); lookHint.textContent = "MOVE MOUSE TO LOOK";
+          };
+          try {
+            const request = canvas.requestPointerLock();
+            if (request && request.catch) request.catch(activateFallback);
+          } catch (_) { activateFallback(); }
+        }
+      } else if (focusedStar >= 0 && constellationDirection && !eyeOffer.open) {
+        chooseConstellationStar(focusedStar);
+      } else if (!eyeOffer.open) {
+        const rect = canvas.getBoundingClientRect();
+        const work = artworkAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        if (work >= 0) { releaseCameraMouse(); showWork(work); }
+      }
+      return;
+    }
     pointerStart = { x: event.clientX, y: event.clientY, moved: false, id: event.pointerId };
     canvas.setPointerCapture(event.pointerId);
     canvas.classList.add("dragging");
   });
   canvas.addEventListener("pointermove", event => {
+    if (event.pointerType === "touch" && skyPointers.has(event.pointerId)) {
+      skyPointers.set(event.pointerId, [event.clientX, event.clientY]);
+      if (skyPinch && skyPointers.size >= 2) {
+        const [a, b] = [...skyPointers.values()];
+        const distance = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (distance > 1 && skyPinch.distance > 1) targetFov = Math.max(0.006, Math.min(defaultFov, skyPinch.fov * skyPinch.distance / distance));
+        return;
+      }
+    }
     if (!pointerStart || pointerStart.id !== event.pointerId) return;
     const dx = event.clientX - pointerStart.x;
     const dy = event.clientY - pointerStart.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) pointerStart.moved = true;
-    yaw -= dx * 0.0032;
-    pitch = Math.max(-1.48, Math.min(1.48, pitch - dy * 0.0032));
+    const sensitivity = 0.0032 * Math.max(0.006, cameraFov / defaultFov);
+    yaw += dx * sensitivity;
+    pitch = Math.max(-1.48, Math.min(1.48, pitch - dy * sensitivity));
     pointerStart.x = event.clientX;
     pointerStart.y = event.clientY;
   });
   function endPointer(event) {
+    if (event.pointerType === "touch") {
+      skyPointers.delete(event.pointerId);
+      if (skyPinchUsed) {
+        pointerStart = null;
+        if (!skyPointers.size) { skyPinch = null; skyPinchUsed = false; canvas.classList.remove("dragging"); }
+        return;
+      }
+    }
     if (!pointerStart || pointerStart.id !== event.pointerId) return;
     const pointer = pointerStart;
     pointerStart = null;
     canvas.classList.remove("dragging");
     if (!pointer.moved && entry.classList.contains("leaving")) {
+      if (constellationDirection && !eyeOffer.open) {
+        const ray = rayForScreen(event.clientX, event.clientY);
+        let nearest = -1, nearestDot = Math.cos(Math.min(0.085, cameraFov * 0.12));
+        constellationStars.forEach((star, slot) => {
+          const dot = ray.reduce((sum, value, axis) => sum + value * star.direction[axis], 0);
+          if (dot > nearestDot) { nearestDot = dot; nearest = slot; }
+        });
+        if (nearest >= 0 && artworkAlongRay(ray, true) <= 0.85) { chooseConstellationStar(nearest); return; }
+      }
       const work = artworkAt(event.clientX, event.clientY);
       if (work >= 0) showWork(work);
     }
@@ -1919,12 +2975,47 @@
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
 
+  document.addEventListener("mousemove", event => {
+    if ((document.pointerLockElement !== canvas && !fallbackMouseLook) || dialog.open || eyeOffer.open) return;
+    if (event.movementX || event.movementY) constellationGuide = null;
+    const sensitivity = 0.0032 * Math.max(0.006, cameraFov / defaultFov);
+    yaw += event.movementX * sensitivity;
+    pitch = Math.max(-1.48, Math.min(1.48, pitch - event.movementY * sensitivity));
+  });
+  document.addEventListener("pointerlockchange", () => {
+    const locked = document.pointerLockElement === canvas;
+    canvas.classList.toggle("mouse-camera", locked);
+    lookHint.textContent = mouseCamera ? (locked || fallbackMouseLook ? "MOVE MOUSE TO LOOK" : "CLICK TO LOOK") : "DRAG TO LOOK";
+  });
+  document.addEventListener("pointerlockerror", () => {
+    canLockMouse = false; fallbackMouseLook = true;
+    canvas.classList.add("mouse-camera"); lookHint.textContent = "MOVE MOUSE TO LOOK";
+  });
+
+  canvas.addEventListener("wheel", event => {
+    if (!constellationDirection || dialog.open || eyeOffer.open) return;
+    event.preventDefault();
+    targetFov = Math.max(0.006, Math.min(defaultFov, targetFov * Math.exp(event.deltaY * 0.0015)));
+  }, { passive: false });
+
   document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && fallbackMouseLook) { releaseCameraMouse(); event.preventDefault(); return; }
+    if (eyeOffer.open) return;
     if (dialog.open) {
       if (event.key === "ArrowLeft") { event.preventDefault(); showWork((currentWork + 11) % 12); }
       if (event.key === "ArrowRight") { event.preventDefault(); showWork((currentWork + 1) % 12); }
       if (event.key === "+" || event.key === "=") { event.preventDefault(); applyZoom(zoomFactor * 1.25, true); }
       if (event.key === "-") { event.preventDefault(); applyZoom(zoomFactor / 1.25, true); }
+      return;
+    }
+    if (event.key === "Enter" && experienceStarted && entry.classList.contains("leaving")) {
+      event.preventDefault();
+      if (focusedStar >= 0 && constellationDirection) chooseConstellationStar(focusedStar);
+      else {
+        const rect = canvas.getBoundingClientRect();
+        const work = artworkAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        if (work >= 0) { releaseCameraMouse(); showWork(work); }
+      }
       return;
     }
     const key = event.key.toLowerCase();
@@ -1934,7 +3025,12 @@
     }
   });
   document.addEventListener("keyup", event => held.delete(event.key.toLowerCase()));
-  window.addEventListener("blur", () => held.clear());
+  window.addEventListener("blur", () => {
+    held.clear();
+    joystickVector[0] = joystickVector[1] = 0;
+    skyPointers.clear(); skyPinch = null; skyPinchUsed = false; pointerStart = null;
+    joystickPointer = null; joystickKnob.style.transform = "translate(0, 0)";
+  });
 
   document.querySelectorAll("[data-move], [data-flight-key]").forEach(button => {
     const keyByDirection = { forward: "w", back: "s", left: "a", right: "d" };
@@ -1943,13 +3039,45 @@
     ["pointerup", "pointercancel", "lostpointercapture"].forEach(name => button.addEventListener(name, () => held.delete(key)));
   });
 
+  const flightJoystick = document.getElementById("flight-joystick");
+  const joystickKnob = document.getElementById("joystick-knob");
+  let joystickPointer = null;
+  function updateJoystick(event) {
+    const rect = flightJoystick.getBoundingClientRect();
+    const radius = rect.width * 0.36;
+    let x = (event.clientX - rect.left - rect.width / 2) / radius;
+    let y = (event.clientY - rect.top - rect.height / 2) / radius;
+    const length = Math.hypot(x, y);
+    if (length > 1) { x /= length; y /= length; }
+    if (length < 0.08) x = y = 0;
+    joystickVector[0] = x; joystickVector[1] = y;
+    joystickKnob.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+  }
+  flightJoystick.addEventListener("pointerdown", event => {
+    if (joystickPointer !== null) return;
+    event.preventDefault(); joystickPointer = event.pointerId;
+    flightJoystick.setPointerCapture(event.pointerId); updateJoystick(event);
+  });
+  flightJoystick.addEventListener("pointermove", event => { if (event.pointerId === joystickPointer) updateJoystick(event); });
+  function releaseJoystick(event) {
+    if (event.pointerId !== joystickPointer) return;
+    joystickPointer = null; joystickVector[0] = joystickVector[1] = 0;
+    joystickKnob.style.transform = "translate(0, 0)";
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(name => flightJoystick.addEventListener(name, releaseJoystick));
+
   function showWork(index) {
     currentWork = (index + 12) % 12;
     zoomFactor = 1;
     stage.classList.remove("zoomed");
     viewerFrame.style.width = "";
     viewerFrame.style.height = "";
-    viewerFrame.classList.toggle("rotated", currentWork === 0);
+    viewerFrame.classList.remove("rotated");
+    detailLayer.replaceChildren();
+    inspectTouches.clear();
+    inspectSwipeStart = null;
+    pinchDistance = 0;
+    pinchUsed = false;
     dialogImage.style.width = "";
     dialogImage.style.height = "";
     dialogImage.style.transform = "";
@@ -1970,13 +3098,26 @@
     if (!dialogImage.naturalWidth || !dialogImage.naturalHeight) return;
     const oldWidth = viewerFrame.getBoundingClientRect().width;
     const oldHeight = viewerFrame.getBoundingClientRect().height;
-    const rotatedWork = currentWork === 0;
-    const fitWidth = Math.min(stage.clientWidth, window.innerWidth * 0.96, 2400);
-    const fitHeight = Math.min(stage.clientHeight, window.innerHeight - 116);
+    // On phones, turn each whole painting to match the device's orientation.
+    // Keep the established desktop presentation on larger screens.
+    const mobileViewer = /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent)
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+      || window.matchMedia("(pointer: coarse) and (max-width: 900px) and (max-height: 900px)").matches;
+    const devicePortrait = window.matchMedia("(orientation: portrait)").matches;
+    const imageLandscape = dialogImage.naturalWidth > dialogImage.naturalHeight;
+    const rotatedWork = mobileViewer ? (devicePortrait === imageLandscape) : !imageLandscape;
+    viewerFrame.classList.toggle("rotated", rotatedWork);
+    fitButton.textContent = mobileViewer ? "FILL" : "FIT";
+    document.querySelector(".viewer-foot span:first-child").textContent = mobileViewer ? "DRAG TO EXPLORE" : "FULL WORK";
+    document.querySelector(".viewer-foot span:last-child").textContent = mobileViewer ? "PINCH TO ZOOM" : "FIT TO SCREEN · 100% TO INSPECT PIXEL DETAIL";
+    const fitWidth = mobileViewer ? stage.clientWidth : Math.min(stage.clientWidth, window.innerWidth * 0.96, 2400);
+    const fitHeight = mobileViewer ? stage.clientHeight : Math.min(stage.clientHeight, window.innerHeight - 116);
     const visualWidth = rotatedWork ? dialogImage.naturalHeight : dialogImage.naturalWidth;
     const visualHeight = rotatedWork ? dialogImage.naturalWidth : dialogImage.naturalHeight;
-    const fitScale = Math.min(fitWidth / visualWidth, fitHeight / visualHeight, 1);
-    const maxZoom = 1 / fitScale;
+    const fitScale = mobileViewer ? Math.max(fitWidth / visualWidth, fitHeight / visualHeight) : Math.min(fitWidth / visualWidth, fitHeight / visualHeight, 1);
+    const detailImage = detailManifest && detailManifest.images[currentWork];
+    const detailRatio = detailImage ? detailImage.width / dialogImage.naturalWidth : 1;
+    const maxZoom = Math.max(1, detailRatio / fitScale);
     zoomFactor = Math.max(1, Math.min(maxZoom, nextFactor));
     const displayWidth = visualWidth * fitScale * zoomFactor;
     const displayHeight = visualHeight * fitScale * zoomFactor;
@@ -1984,29 +3125,114 @@
     viewerFrame.style.height = `${displayHeight}px`;
     dialogImage.style.width = `${rotatedWork ? displayHeight : displayWidth}px`;
     dialogImage.style.height = `${rotatedWork ? displayWidth : displayHeight}px`;
-    stage.classList.toggle("zoomed", zoomFactor > 1.001);
+    detailLayer.style.width = dialogImage.style.width;
+    detailLayer.style.height = dialogImage.style.height;
+    stage.classList.toggle("zoomed", mobileViewer || zoomFactor > 1.001);
     zoomValue.textContent = `${Math.round(zoomFactor * 100)}%`;
     if (preserveCenter && oldWidth && oldHeight) {
       stage.scrollLeft = (stage.scrollLeft + stage.clientWidth / 2) * (displayWidth / oldWidth) - stage.clientWidth / 2;
       stage.scrollTop = (stage.scrollTop + stage.clientHeight / 2) * (displayHeight / oldHeight) - stage.clientHeight / 2;
     } else if (zoomFactor === 1) {
-      stage.scrollTo(0, 0);
+      stage.scrollTo(Math.max(0, (displayWidth - stage.clientWidth) / 2), Math.max(0, (displayHeight - stage.clientHeight) / 2));
     }
+    queueDetailUpdate();
   }
+  function queueDetailUpdate() {
+    cancelAnimationFrame(detailFrame);
+    detailFrame = requestAnimationFrame(updateVisibleDetail);
+  }
+  function updateVisibleDetail() {
+    const info = detailManifest && detailManifest.images[currentWork];
+    if (!dialog.open || !info || !dialogImage.naturalWidth) return;
+    const imageRect = detailLayer.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    const rotated = viewerFrame.classList.contains("rotated");
+    const cssWidth = rotated ? imageRect.height : imageRect.width;
+    const needsDetail = cssWidth * (window.devicePixelRatio || 1) > dialogImage.naturalWidth * 0.6;
+    if (!needsDetail) { detailLayer.replaceChildren(); return; }
+    const size = detailManifest.tileSize;
+    const scale = cssWidth / info.width;
+    const wanted = new Set();
+    const margin = 128;
+    for (let y = 0; y < info.height; y += size) {
+      for (let x = 0; x < info.width; x += size) {
+        const w = Math.min(size, info.width - x), h = Math.min(size, info.height - y);
+        const left = imageRect.left + (rotated ? info.height - y - h : x) * scale;
+        const top = imageRect.top + (rotated ? x : y) * scale;
+        const width = (rotated ? h : w) * scale, height = (rotated ? w : h) * scale;
+        if (left + width < stageRect.left - margin || left > stageRect.right + margin
+          || top + height < stageRect.top - margin || top > stageRect.bottom + margin) continue;
+        const key = `${x / size}-${y / size}`;
+        wanted.add(key);
+        if (detailLayer.querySelector(`[data-tile="${key}"]`)) continue;
+        const tile = document.createElement("img");
+        tile.alt = "";
+        tile.draggable = false;
+        tile.dataset.tile = key;
+        tile.style.left = `${x / info.width * 100}%`;
+        tile.style.top = `${y / info.height * 100}%`;
+        tile.style.width = `${w / info.width * 100}%`;
+        tile.style.height = `${h / info.height * 100}%`;
+        tile.src = `artwork/detail/${String(currentWork + 1).padStart(2, "0")}/${key}.jpg`;
+        detailLayer.appendChild(tile);
+      }
+    }
+    for (const tile of [...detailLayer.children]) if (!wanted.has(tile.dataset.tile)) tile.remove();
+  }
+  stage.addEventListener("scroll", queueDetailUpdate, { passive: true });
   stage.addEventListener("pointerdown", event => {
-    if (event.pointerType !== "touch" || !dialog.open || zoomFactor > 1.001) return;
-    inspectSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
-  });
-  stage.addEventListener("pointerup", event => {
-    if (!inspectSwipeStart || inspectSwipeStart.pointerId !== event.pointerId) return;
-    const dx = event.clientX - inspectSwipeStart.x;
-    const dy = event.clientY - inspectSwipeStart.y;
-    inspectSwipeStart = null;
-    if (zoomFactor <= 1.001 && Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.25) {
-      showWork((currentWork + (dx < 0 ? 1 : 11)) % 12);
+    if (event.pointerType !== "touch" || !dialog.open) return;
+    event.preventDefault();
+    stage.setPointerCapture(event.pointerId);
+    inspectTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (inspectTouches.size === 1) {
+      pinchUsed = false;
+      inspectSwipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, left: stage.scrollLeft, top: stage.scrollTop };
+    } else if (inspectTouches.size === 2) {
+      const [a, b] = [...inspectTouches.values()];
+      pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      pinchUsed = true;
+      inspectSwipeStart = null;
     }
   });
-  stage.addEventListener("pointercancel", () => { inspectSwipeStart = null; });
+  stage.addEventListener("pointermove", event => {
+    const previous = inspectTouches.get(event.pointerId);
+    if (!previous) return;
+    event.preventDefault();
+    inspectTouches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (inspectTouches.size === 2) {
+      const [a, b] = [...inspectTouches.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+      const before = viewerFrame.getBoundingClientRect();
+      const anchorX = (x - before.left) / before.width;
+      const anchorY = (y - before.top) / before.height;
+      if (pinchDistance > 0) applyZoom(zoomFactor * distance / pinchDistance);
+      const after = viewerFrame.getBoundingClientRect();
+      stage.scrollLeft += after.left + anchorX * after.width - x;
+      stage.scrollTop += after.top + anchorY * after.height - y;
+      pinchDistance = distance;
+    } else if (inspectTouches.size === 1 && (zoomFactor > 1.001 || stage.scrollWidth > stage.clientWidth + 1 || stage.scrollHeight > stage.clientHeight + 1)) {
+      stage.scrollLeft -= event.clientX - previous.x;
+      stage.scrollTop -= event.clientY - previous.y;
+    }
+  });
+  const endInspectPointer = event => {
+    if (!inspectTouches.has(event.pointerId)) return;
+    inspectTouches.delete(event.pointerId);
+    if (event.type === "pointerup" && !pinchUsed && inspectSwipeStart && inspectSwipeStart.pointerId === event.pointerId) {
+      const dx = event.clientX - inspectSwipeStart.x;
+      const dy = event.clientY - inspectSwipeStart.y;
+      const panned = Math.abs(stage.scrollLeft - inspectSwipeStart.left) > 2 || Math.abs(stage.scrollTop - inspectSwipeStart.top) > 2;
+      if (!panned && zoomFactor <= 1.001 && Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        showWork((currentWork + (dx < 0 ? 1 : 11)) % 12);
+      }
+    }
+    inspectSwipeStart = null;
+    pinchDistance = 0;
+  };
+  stage.addEventListener("pointerup", endInspectPointer);
+  stage.addEventListener("pointercancel", endInspectPointer);
   dialogImage.addEventListener("load", () => applyZoom(zoomFactor));
   zoomInButton.addEventListener("click", () => applyZoom(zoomFactor * 1.25, true));
   zoomOutButton.addEventListener("click", () => applyZoom(zoomFactor / 1.25, true));
@@ -2016,8 +3242,13 @@
     event.preventDefault();
     applyZoom(zoomFactor * (event.deltaY < 0 ? 1.15 : 1 / 1.15), true);
   }, { passive: false });
+  let viewerResizeFrame = 0;
   window.addEventListener("resize", () => {
-    if (dialog.open && dialogImage.naturalWidth) applyZoom(zoomFactor);
+    if (!dialog.open || !dialogImage.naturalWidth) return;
+    cancelAnimationFrame(viewerResizeFrame);
+    viewerResizeFrame = requestAnimationFrame(() => {
+      viewerResizeFrame = requestAnimationFrame(() => applyZoom(zoomFactor));
+    });
   });
   dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
 
